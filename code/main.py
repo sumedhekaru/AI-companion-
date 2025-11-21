@@ -2,27 +2,56 @@ import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
+import base64
+import json
+import logging
+import base64
+import asyncio
+import uuid
+from typing import Dict, Any
+import os
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, FileResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from stt_vosk import VoskStreamingTranscriber
-from config import SpeechToTextConfig
+from tts import get_tts_processor, synthesize_speech
+from config import SpeechToTextConfig, get_tts_config_dict, get_stt_config_dict, get_llm_config_dict, tts_config
 
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
+# Initialize FastAPI app
 app = FastAPI(title="Minimal Audio Stream Demo")
 
 RECORDINGS_DIR = Path(__file__).parent / "recordings"
 RECORDINGS_DIR.mkdir(exist_ok=True)
 
-# Mount static files directory
+# Global variables for WebSocket connections
+active_connections: Dict[str, WebSocket] = {}
+
+# Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# Pydantic models for API requests
+class UserMessage(BaseModel):
+    text: str
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: str = "af_heart"  # Default Kokoro voice
+    speed: float = 1.0
+
+class TTSVoiceResponse(BaseModel):
+    voices: list
+
+class ConfigResponse(BaseModel):
+    tts: Dict[str, Any]
+    stt: Dict[str, Any]
+    llm: Dict[str, Any]
 
 @app.get("/", response_class=HTMLResponse)
 async def root() -> str:
@@ -114,19 +143,122 @@ async def _queue_reader(ws: WebSocket, queue: asyncio.Queue[str]):
             break
 
 
-class UserMessage(BaseModel):
+# TTS Endpoints
+class TTSRequest(BaseModel):
     text: str
+    voice: str = "af_heart"  # Default Kokoro voice
+    speed: float = 1.0
 
 
-def dummy_llm_reply(user_text: str) -> str:
-    # Placeholder: return a simple echo for now
-    return f"You said: {user_text}"
+class TTSVoiceResponse(BaseModel):
+    voices: list
 
 
-@app.post("/chat")
-async def chat(msg: UserMessage):
-    reply = dummy_llm_reply(msg.text)
-    return {"reply": reply}
+@app.get("/tts/voices", response_model=TTSVoiceResponse)
+async def get_tts_voices():
+    """Get available TTS voices."""
+    try:
+        processor = get_tts_processor()
+        voices = processor.get_available_voices()
+        logger.info(f"🔊 Returning {len(voices)} available TTS voices")
+        return {"voices": voices}
+    except Exception as e:
+        logger.error(f"🔊 Failed to get TTS voices: {e}")
+        return {"voices": []}
+
+
+@app.post("/tts/synthesize")
+async def synthesize_tts(request: TTSRequest):
+    """Synthesize speech from text and return audio as base64."""
+    try:
+        processor = get_tts_processor()
+        
+        # Set voice and speed if different from current
+        if request.voice != processor.current_voice:
+            processor.set_voice(request.voice)
+        if abs(request.speed - processor.speed) > 0.01:
+            processor.set_speed(request.speed)
+        
+        # Synthesize speech
+        logger.info(f"🔊 Synthesizing TTS: {request.text[:50]}...")
+        audio_bytes = await processor.synthesize_async(request.text)
+        
+        if audio_bytes:
+            # Encode as base64 for JSON transport
+            audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+            logger.info(f"🔊 TTS synthesis successful: {len(audio_bytes)} bytes")
+            return {
+                "audio": audio_b64,
+                "format": "wav",
+                "sample_rate": 24000,  # Correct Kokoro sample rate
+                "channels": 1
+            }
+        else:
+            logger.error("🔊 TTS synthesis returned empty audio")
+            return {"error": "TTS synthesis failed"}
+            
+    except Exception as e:
+        logger.error(f"🔊 TTS synthesis error: {e}")
+        return {"error": str(e)}
+
+
+@app.post("/tts/speak")
+async def speak_tts(request: TTSRequest):
+    """Synthesize and immediately play speech (for testing)."""
+    try:
+        processor = get_tts_processor()
+        
+        # Set voice and speed if different from current
+        if request.voice != processor.current_voice:
+            processor.set_voice(request.voice)
+        if abs(request.speed - processor.speed) > 0.01:
+            processor.set_speed(request.speed)
+        
+        # Synthesize speech synchronously for immediate playback
+        logger.info(f"🔊 Speaking TTS: {request.text[:50]}...")
+        audio_bytes = processor.synthesize_sync(request.text)
+        
+        if audio_bytes:
+            logger.info(f"🔊 TTS playback successful: {len(audio_bytes)} bytes")
+            return {"success": True, "message": "Speech played successfully"}
+        else:
+            logger.error("🔊 TTS playback failed")
+            return {"success": False, "error": "TTS synthesis failed"}
+            
+    except Exception as e:
+        logger.error(f"🔊 TTS playback error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# Configuration Endpoints
+class ConfigResponse(BaseModel):
+    tts: Dict[str, Any]
+    stt: Dict[str, Any]
+    llm: Dict[str, Any]
+
+
+@app.get("/config", response_model=ConfigResponse)
+async def get_config():
+    """Get current configuration."""
+    try:
+        return {
+            "tts": get_tts_config_dict(),
+            "stt": get_stt_config_dict(),
+            "llm": get_llm_config_dict()
+        }
+    except Exception as e:
+        logger.error(f"🔊 Failed to get config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/tts/config")
+async def get_tts_config():
+    """Get TTS configuration."""
+    try:
+        return get_tts_config_dict()
+    except Exception as e:
+        logger.error(f"🔊 Failed to get TTS config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

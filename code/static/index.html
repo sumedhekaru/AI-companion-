@@ -103,8 +103,21 @@
         <div id="messages" class="messages"></div>
       </main>
       <footer>
-        <button id="start">Start streaming</button>
-        <button id="stop" disabled>Stop streaming</button>
+        <button id="start">Start Streaming</button>
+        <button id="stop" disabled>Stop</button>
+        <span id="recordingIndicator" style="display: none; color: red;">🔴 Recording</span>
+        
+        <!-- TTS Controls -->
+        <div style="margin-left: auto; display: flex; gap: 0.5rem; align-items: center;">
+          <label for="voiceSelect" style="font-size: 0.9rem;">Voice:</label>
+          <select id="voiceSelect" style="padding: 0.3rem; border-radius: 0.3rem; border: 1px solid #ddd;">
+            <!-- Voices will be populated dynamically from backend config -->
+          </select>
+          
+          <button id="toggleTTS" style="padding: 0.4rem 0.8rem; background: #17a2b8; color: white; border: none; border-radius: 0.3rem; cursor: pointer; font-size: 0.9rem;">
+            🔊 TTS ON
+          </button>
+        </div>
       </footer>
     </div>
     <script src="/static/script.js"></script>

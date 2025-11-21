@@ -12,6 +12,11 @@ const CONFIG = {
   // Latency optimizations
   SPEECH_DEBOUNCE_MS: 50, // Reduced from 200ms for faster speech detection
   DONE_DELAY_MS: 500, // Delay before sending DONE to let Vosk process final word
+  
+  // TTS configuration
+  TTS_VOICE: "af_heart", // Default Kokoro voice
+  TTS_SPEED: 1.0, // Default speech speed
+  TTS_ENABLED: true, // Enable/disable TTS
 };
 
 const statusEl = document.getElementById("status");
@@ -35,6 +40,11 @@ let isSpeechActive = false; // Track if we're currently in a speech session
 // Pre-buffer for capturing first words
 let preBuffer = [];
 const PRE_BUFFER_SIZE = 10; // Keep last 10 chunks before speech detection
+
+// TTS variables
+let availableVoices = [];
+let currentTTSVoice = CONFIG.TTS_VOICE;
+let isTTSEnabled = CONFIG.TTS_ENABLED;
 
 function updateStatus(text) {
   statusEl.textContent = text;
@@ -148,6 +158,109 @@ function endSpeechSession() {
   console.log("Speech session ended");
 }
 
+// Load configuration from backend
+async function loadConfig() {
+  try {
+    const response = await fetch('/config');
+    const config = await response.json();
+    
+    // Update TTS configuration from backend
+    CONFIG.TTS_VOICE = config.tts.voice;
+    CONFIG.TTS_SPEED = config.tts.speed;
+    CONFIG.TTS_ENABLED = config.tts.enabled;
+    availableVoices = config.tts.available_voices;
+    
+    console.log('🔊 Loaded configuration from backend:', config);
+    return config;
+  } catch (error) {
+    console.error('🔊 Failed to load configuration:', error);
+    // Use defaults if config loading fails
+    return null;
+  }
+}
+
+// Load TTS voices from backend
+async function loadTTSVoices() {
+  try {
+    const response = await fetch('/tts/voices');
+    const data = await response.json();
+    
+    availableVoices = data.voices || [];
+    console.log(`🔊 Loaded ${availableVoices.length} TTS voices`);
+    return availableVoices;
+  } catch (error) {
+    console.error('🔊 Failed to load TTS voices:', error);
+    return [];
+  }
+}
+
+// TTS functions
+async function playTTSAudio(text) {
+  if (!isTTSEnabled || !text || !text.trim()) {
+    return;
+  }
+
+  try {
+    updateStatus("Generating speech...");
+    
+    const response = await fetch('/tts/synthesize', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: text,
+        voice: currentTTSVoice,
+        speed: CONFIG.TTS_SPEED
+      })
+    });
+
+    const data = await response.json();
+    
+    if (data.audio) {
+      // Decode base64 audio and play
+      const audioBytes = atob(data.audio);
+      const audioArray = new Uint8Array(audioBytes.length);
+      for (let i = 0; i < audioBytes.length; i++) {
+        audioArray[i] = audioBytes.charCodeAt(i);
+      }
+      
+      // Create audio context and play
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const audioBuffer = await audioContext.decodeAudioData(audioArray.buffer);
+      
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+      
+      source.onended = () => {
+        updateStatus("Listening...");
+      };
+      
+      source.start(0);
+      updateStatus("Playing speech...");
+      console.log('TTS audio playing');
+    } else {
+      console.error('TTS synthesis failed:', data.error);
+      updateStatus("TTS failed");
+    }
+  } catch (error) {
+    console.error('TTS playback error:', error);
+    updateStatus("TTS error");
+  }
+}
+
+function toggleTTS() {
+  isTTSEnabled = !isTTSEnabled;
+  console.log('TTS enabled:', isTTSEnabled);
+  return isTTSEnabled;
+}
+
+function setTTSVoice(voiceId) {
+  currentTTSVoice = voiceId;
+  console.log('TTS voice changed to:', voiceId);
+}
+
 function simulateLLMResponse() {
   // Add "thinking" indicator
   const thinkingMsg = addMessage("", "assistant", true);
@@ -169,9 +282,16 @@ function simulateLLMResponse() {
     const randomResponse = responses[Math.floor(Math.random() * responses.length)];
     finishProcessing(randomResponse);
     
+    // Play TTS audio for the response
+    setTimeout(() => {
+      playTTSAudio(randomResponse);
+    }, 500); // Small delay before TTS
+    
     // Return to monitoring mode after LLM response (no speech session active)
     setTimeout(() => {
-      updateStatus("Listening...");
+      if (!isTTSEnabled) {
+        updateStatus("Listening...");
+      }
       // Don't restart silence timer here - wait for actual speech
     }, 500);
   }, 1500); // Simulate 1.5 second "thinking" time
@@ -393,3 +513,41 @@ stopBtn.addEventListener("click", () => {
   
   cleanup();
 });
+
+// Initialize TTS on page load
+window.addEventListener('load', async () => {
+  // Load configuration from backend first
+  await loadConfig();
+  await loadTTSVoices();
+  setupTTSControls();
+  console.log('TTS system initialized with configuration from backend');
+});
+
+function setupTTSControls() {
+  const voiceSelect = document.getElementById('voiceSelect');
+  const toggleTTSBtn = document.getElementById('toggleTTS');
+  
+  // Populate voice dropdown
+  voiceSelect.innerHTML = '';
+  availableVoices.forEach(voice => {
+    const option = document.createElement('option');
+    option.value = voice.id;
+    option.textContent = `${voice.name} (${voice.gender})`;
+    if (voice.id === currentTTSVoice) {
+      option.selected = true;
+    }
+    voiceSelect.appendChild(option);
+  });
+  
+  // Voice selection handler
+  voiceSelect.addEventListener('change', (e) => {
+    setTTSVoice(e.target.value);
+  });
+  
+  // TTS toggle handler
+  toggleTTSBtn.addEventListener('click', () => {
+    const enabled = toggleTTS();
+    toggleTTSBtn.textContent = enabled ? '🔊 TTS ON' : '🔇 TTS OFF';
+    toggleTTSBtn.style.background = enabled ? '#17a2b8' : '#6c757d';
+  });
+}
