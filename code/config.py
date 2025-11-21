@@ -6,37 +6,24 @@ from pathlib import Path
 class SpeechToTextConfig:
     """Configuration for real-time speech-to-text streaming."""
 
-    # Whisper model
-    # Options: "tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large", "large-v2", "large-v3"
-    # Smaller models are faster but less accurate. English-specific models (e.g., "base.en") only support English.
-    whisper_model: str = "tiny.en"
+    # Audio capture settings - optimized for 100ms latency
+    sample_rate: int = 16000  # Hz; Vosk expects 16 kHz
+    channels: int = 1  # Mono
+    frame_size: int = 1024  # Reduced from 4096 for ~64ms chunks instead of ~256ms
 
-    # Device to run Whisper on
-    # "cuda" if available for GPU acceleration, otherwise "cpu"
-    # For Mac: "mps" for Metal Performance Shaders acceleration
-    device: str = "mps"
-
-    # Silence detection: wait this many milliseconds of audio below the frontend RMS threshold before transcribing.
-    # Lower values reduce latency but may split sentences. Typical range: 100–800 ms.
-    silence_ms: int = 300
-
-    # Maximum buffer time: transcribe after this many milliseconds even if silence is not detected.
-    # Prevents very long transcription delays. Typical range: 2000–5000 ms.
-    max_buffer_ms: int = 800
-
-    # Minimum audio bytes required to attempt transcription.
-    # Helps avoid hallucinations on very short buffers. 8000 bytes ≈ 0.5 s at 16 kHz.
-    min_buffer_bytes: int = 4000
-
-    # Frontend audio level filter (RMS threshold).
+    # Frontend audio level filter (RMS threshold)
     # Only send audio to backend if RMS > this value. Helps filter background noise.
     # Typical range: 0.005–0.02. Lower values capture quieter speech but may let in noise.
-    frontend_rms_threshold: float = 0.01
+    frontend_rms_threshold: float = 0.1
 
-    # Audio capture settings
-    sample_rate: int = 16000  # Hz; Whisper expects 16 kHz
-    channels: int = 1  # Mono
-    frame_size: int = 4096  # Frames per Web Audio API callback
+    # Frontend silence detection for triggering DONE signal
+    # RMS threshold below which audio is considered "silent"
+    # Typical range: 0.005–0.02. We'll experiment to find optimal value.
+    frontend_silence_threshold: float = 0.01
+    
+    # Time in milliseconds of silence before sending DONE signal
+    # Typical range: 3000–7000ms. We'll experiment to find optimal timing.
+    frontend_silence_timeout_ms: int = 5000
 
     # Temporary files directory
     recordings_dir: Path = Path(__file__).parent / "recordings"

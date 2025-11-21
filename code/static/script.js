@@ -2,30 +2,195 @@
 const CONFIG = {
   SAMPLE_RATE: 16000,
   CHANNELS: 1,
-  FRAME_SIZE: 4096,
+  FRAME_SIZE: 1024, // Reduced from 4096 for faster processing
   RMS_THRESHOLD: 0, // Temporarily disable to debug
+  
+  // Silence detection for DONE signal
+  SILENCE_THRESHOLD: 0.01,  // RMS threshold below which audio is considered "silent"
+  SILENCE_TIMEOUT_MS: 5000, // Time in milliseconds of silence before sending DONE signal
+  
+  // Latency optimizations
+  SPEECH_DEBOUNCE_MS: 50, // Reduced from 200ms for faster speech detection
 };
 
 const statusEl = document.getElementById("status");
 const startBtn = document.getElementById("start");
 const stopBtn = document.getElementById("stop");
 const messagesEl = document.getElementById("messages");
+const recordingIndicator = document.getElementById("recordingIndicator");
 
 let ws = null;
 let mediaRecorder = null;
 let mediaStream = null;
 let currentUserMessage = "";
+let isProcessing = false;
+let processingMessageEl = null;
+let silenceTimer = null;
+
+// Silence detection variables
+let frontendSilenceTimer = null;
+let lastAudioTime = null;
+let isSpeechActive = false; // Track if we're currently in a speech session
 
 function updateStatus(text) {
   statusEl.textContent = text;
 }
 
-function addMessage(content, role) {
+function addMessage(content, role, showProcessing = false) {
   const div = document.createElement("div");
   div.className = `message ${role}`;
-  div.textContent = content;
+  
+  if (showProcessing) {
+    div.innerHTML = content + '<span class="processing-indicator"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>';
+    isProcessing = true;
+    processingMessageEl = div;
+  } else {
+    div.textContent = content;
+  }
+  
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
+  return div;
+}
+
+function updateProcessingMessage(content) {
+  if (processingMessageEl && isProcessing) {
+    processingMessageEl.innerHTML = content + '<span class="processing-indicator"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>';
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+}
+
+function finishProcessing(finalContent) {
+  if (processingMessageEl && isProcessing) {
+    processingMessageEl.innerHTML = finalContent;
+    processingMessageEl.classList.remove('recording');
+    isProcessing = false;
+    processingMessageEl = null;
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    
+    // Start silence timer after finishing processing
+    startSilenceTimer();
+  }
+}
+
+function startSilenceTimer() {
+  // Clear any existing timer
+  if (silenceTimer) {
+    clearTimeout(silenceTimer);
+  }
+  
+  // Set timer for 5 seconds of silence
+  silenceTimer = setTimeout(() => {
+    if (currentUserMessage.trim()) {
+      simulateLLMResponse();
+    }
+  }, 5000);
+}
+
+function resetSilenceTimer() {
+  if (silenceTimer) {
+    clearTimeout(silenceTimer);
+    silenceTimer = null;
+  }
+}
+
+// Frontend silence detection functions
+function startFrontendSilenceTimer() {
+  // Clear any existing timer
+  if (frontendSilenceTimer) {
+    clearTimeout(frontendSilenceTimer);
+  }
+  
+  // Only set timer if we're in an active speech session
+  if (isSpeechActive) {
+    frontendSilenceTimer = setTimeout(() => {
+      console.log("Silence detected - sending DONE");
+      sendDoneSignal();
+    }, CONFIG.SILENCE_TIMEOUT_MS);
+  }
+}
+
+function resetFrontendSilenceTimer() {
+  if (frontendSilenceTimer) {
+    clearTimeout(frontendSilenceTimer);
+    frontendSilenceTimer = null;
+  }
+  lastAudioTime = Date.now();
+  
+  // Only restart timer if speech is active
+  if (isSpeechActive) {
+    startFrontendSilenceTimer();
+  }
+}
+
+function stopFrontendSilenceTimer() {
+  if (frontendSilenceTimer) {
+    clearTimeout(frontendSilenceTimer);
+    frontendSilenceTimer = null;
+  }
+}
+
+function sendDoneSignal() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send("DONE");
+    console.log("DONE sent");
+    
+    // End the current speech session
+    endSpeechSession();
+    
+    // Trigger LLM response after a short delay to let backend process
+    setTimeout(() => {
+      if (currentUserMessage.trim()) {
+        console.log("Triggering LLM response");
+        finishProcessing(currentUserMessage);
+        
+        // Trigger LLM response
+        setTimeout(() => {
+          simulateLLMResponse();
+        }, 500);
+        
+        // Reset state for next turn
+        currentUserMessage = "";
+        isProcessing = false;
+        processingMessageEl = null;
+      }
+    }, 1500); // Wait 1.5 seconds for backend to process DONE
+  }
+}
+
+function endSpeechSession() {
+  isSpeechActive = false;
+  stopFrontendSilenceTimer();
+  console.log("Speech session ended");
+}
+
+function simulateLLMResponse() {
+  // Add "thinking" indicator
+  const thinkingMsg = addMessage("", "assistant", true);
+  thinkingMsg.classList.add('recording');
+  
+  // Simulate LLM processing delay
+  setTimeout(() => {
+    const responses = [
+      "That's interesting! Tell me more about that.",
+      "I understand. How does that make you feel?",
+      "Thanks for sharing! What would you like to discuss next?",
+      "That's a great point. Let me think about that...",
+      "I appreciate you explaining that. Could you elaborate?",
+      "Fascinating! What are your thoughts on this?",
+      "I see. That gives me a better perspective.",
+      "Thank you for that insight. What's on your mind?"
+    ];
+    
+    const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+    finishProcessing(randomResponse);
+    
+    // Return to monitoring mode after LLM response (no speech session active)
+    setTimeout(() => {
+      updateStatus("Listening...");
+      // Don't restart silence timer here - wait for actual speech
+    }, 500);
+  }, 1500); // Simulate 1.5 second "thinking" time
 }
 
 async function startStreaming() {
@@ -47,13 +212,19 @@ async function startStreaming() {
   ws.binaryType = "arraybuffer";
 
   ws.onopen = () => {
-    updateStatus("Streaming audio...");
+    updateStatus("Listening...");
+    recordingIndicator.style.display = "inline";
     stopBtn.disabled = false;
     startBtn.disabled = true;
 
-    // Clear previous messages
-    messagesEl.innerHTML = "";
+    // Reset current message state but keep conversation history
     currentUserMessage = "";
+    isProcessing = false;
+    processingMessageEl = null;
+    resetSilenceTimer();
+
+    // Start frontend silence detection (monitoring mode)
+    resetFrontendSilenceTimer();
 
     // Create Web Audio context to capture raw PCM
     const audioContext = new AudioContext({ sampleRate: CONFIG.SAMPLE_RATE });
@@ -69,17 +240,50 @@ async function startStreaming() {
           sum += inputBuffer[i] * inputBuffer[i];
         }
         const rms = Math.sqrt(sum / inputBuffer.length);
-        // Only send if audio level is above threshold
-        if (rms > CONFIG.RMS_THRESHOLD) {
-          // Convert float32 [-1,1] to int16 little-endian
-          const pcm = new Int16Array(inputBuffer.length);
-          for (let i = 0; i < inputBuffer.length; i++) {
-            pcm[i] = Math.max(-32768, Math.min(32767, inputBuffer[i] * 32768));
+        
+        // Check for speech vs silence
+        if (rms > CONFIG.SILENCE_THRESHOLD) {
+          // Speech detected
+          
+          // If not already in speech session, start one (with debounce to prevent false triggers)
+          if (!isSpeechActive) {
+            // Require sustained speech to start a session (prevent false triggers)
+            setTimeout(() => {
+              if (!isSpeechActive && rms > CONFIG.SILENCE_THRESHOLD) {
+                startSpeechSession();
+              }
+            }, CONFIG.SPEECH_DEBOUNCE_MS); // 50ms debounce for faster response
+          } else {
+            // Already in speech session - reset silence timer
+            resetFrontendSilenceTimer();
           }
-          ws.send(pcm.buffer);
+          
+          // Only send if audio level is above threshold and we're in a speech session
+          if (isSpeechActive && rms > CONFIG.RMS_THRESHOLD) {
+            // Convert float32 [-1,1] to int16 little-endian
+            const pcm = new Int16Array(inputBuffer.length);
+            for (let i = 0; i < inputBuffer.length; i++) {
+              pcm[i] = Math.max(-32768, Math.min(32767, inputBuffer[i] * 32768));
+            }
+            ws.send(pcm.buffer);
+          }
         }
+        // If rms <= SILENCE_THRESHOLD, we're in silence - timer will handle session end
       }
     };
+
+function startSpeechSession() {
+  if (!isSpeechActive) {
+    isSpeechActive = true;
+    updateStatus("Transcribing...");
+    addMessage("", "user", true);
+    processingMessageEl = messagesEl.querySelector(".message.user:last-of-type");
+    processingMessageEl.classList.add('recording');
+    isProcessing = true;
+    resetFrontendSilenceTimer();
+    console.log("Speech session started");
+  }
+}
 
     source.connect(processor);
     processor.connect(audioContext.destination);
@@ -92,15 +296,35 @@ async function startStreaming() {
   ws.onmessage = (event) => {
     const msg = event.data;
     console.log("Server:", msg);
-    // If the message looks like transcription (not a control/status message), display it
-    if (msg && !msg.match(/^(Received|Stopping|Transcribing|Transcription)/)) {
+    
+    // Handle control/status messages
+    if (msg.match(/^(Received|Stopping|Transcribing|Transcription)/)) {
+      return;
+    }
+    
+    // Handle partial results for real-time feedback
+    if (msg.startsWith("[PARTIAL]")) {
+      const partialText = msg.replace("[PARTIAL] ", "").trim();
+      if (partialText && isProcessing && processingMessageEl) {
+        // Show partial text with different styling for real-time feedback
+        processingMessageEl.innerHTML = partialText + '<span class="processing-indicator"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>';
+        processingMessageEl.classList.add('partial');
+      }
+      return;
+    }
+    
+    // Handle final transcription results
+    if (msg) {
+      // Reset silence timer when we get new transcription
+      resetSilenceTimer();
+      
+      // Update the existing processing message
       currentUserMessage += (currentUserMessage ? " " : "") + msg;
-      // Update the last user message or create it if it doesn't exist
-      let lastUserMsg = messagesEl.querySelector(".message.user:last-of-type");
-      if (!lastUserMsg) {
-        addMessage(currentUserMessage, "user");
-      } else {
-        lastUserMsg.textContent = currentUserMessage;
+      
+      if (isProcessing && processingMessageEl) {
+        // Update with final text (remove partial styling)
+        processingMessageEl.classList.remove('partial');
+        updateProcessingMessage(currentUserMessage);
       }
     }
   };
@@ -112,6 +336,13 @@ async function startStreaming() {
 
   ws.onclose = () => {
     updateStatus("Connection closed.");
+    recordingIndicator.style.display = "none";
+    resetSilenceTimer();
+    stopFrontendSilenceTimer();
+    // Finish any ongoing processing
+    if (isProcessing && currentUserMessage) {
+      finishProcessing(currentUserMessage);
+    }
     cleanup();
   };
 }
@@ -147,5 +378,21 @@ function cleanup() {
 startBtn.addEventListener("click", startStreaming);
 stopBtn.addEventListener("click", () => {
   updateStatus("Stopping...");
+  recordingIndicator.style.display = "none";
+  resetSilenceTimer();
+  stopFrontendSilenceTimer();
+  
+  // Finish any ongoing processing
+  if (isProcessing && currentUserMessage) {
+    finishProcessing(currentUserMessage);
+    
+    // If there's a user message, trigger LLM response immediately
+    if (currentUserMessage.trim()) {
+      setTimeout(() => {
+        simulateLLMResponse();
+      }, 500); // Small delay to show final transcription
+    }
+  }
+  
   cleanup();
 });

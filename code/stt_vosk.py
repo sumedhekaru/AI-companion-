@@ -1,12 +1,8 @@
 import asyncio
-import io
+import json
 import logging
 import time
 from pathlib import Path
-from typing import AsyncGenerator, Optional
-import numpy as np
-import json
-import wave
 
 try:
     import vosk
@@ -50,7 +46,7 @@ class VoskStreamingTranscriber:
             logger.error(f"🔊 Failed to load Vosk model: {e}")
     
     async def add_chunk(self, chunk: bytes) -> None:
-        """Process audio chunk immediately (no buffering)"""
+        """Process audio chunk immediately with partial results for speed"""
         if not self.recognizer:
             return
         
@@ -58,7 +54,7 @@ class VoskStreamingTranscriber:
             self._first_chunk_time = time.time()
             logger.info("🔊 First chunk received - starting Vosk latency timer")
         
-        # Process chunk immediately
+        # Process chunk immediately and check for partial results
         if self.recognizer.AcceptWaveform(chunk):
             result = json.loads(self.recognizer.Result())
             text = result.get('text', '').strip()
@@ -68,6 +64,12 @@ class VoskStreamingTranscriber:
                 logger.info(f"🔊 Enqueue transcript: {text}")
                 await self.result_queue.put(text)
                 self._first_chunk_time = None  # Reset for next utterance
+        else:
+            # Send partial results for real-time feedback (speed optimization)
+            partial = json.loads(self.recognizer.PartialResult())
+            partial_text = partial.get('partial', '').strip()
+            if partial_text and len(partial_text) > 2:  # Only send substantial partials
+                await self.result_queue.put(f"[PARTIAL] {partial_text}")
     
     async def flush(self) -> None:
         """Get final result"""

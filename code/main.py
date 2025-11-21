@@ -62,6 +62,14 @@ async def audio_stream(ws: WebSocket):
                     except RuntimeError:
                         pass
                     break
+                elif text_data.upper() == "DONE":
+                    # Frontend detected silence - flush final transcription
+                    logger.info("🔊 DONE received - flushing transcription")
+                    await transcriber.flush()
+                    # Continue listening for more audio
+                    continue
+                else:
+                    logger.info(f"🔊 Control message: {text_data}")
                 continue
 
             chunk = message.get("bytes")
