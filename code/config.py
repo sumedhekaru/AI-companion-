@@ -18,15 +18,15 @@ class SpeechToTextConfig:
 
     # Silence detection: wait this many milliseconds of audio below the frontend RMS threshold before transcribing.
     # Lower values reduce latency but may split sentences. Typical range: 100–800 ms.
-    silence_ms: int = 100
+    silence_ms: int = 300
 
     # Maximum buffer time: transcribe after this many milliseconds even if silence is not detected.
     # Prevents very long transcription delays. Typical range: 2000–5000 ms.
-    max_buffer_ms: int = 1500
+    max_buffer_ms: int = 800
 
     # Minimum audio bytes required to attempt transcription.
     # Helps avoid hallucinations on very short buffers. 8000 bytes ≈ 0.5 s at 16 kHz.
-    min_buffer_bytes: int = 8000
+    min_buffer_bytes: int = 4000
 
     # Frontend audio level filter (RMS threshold).
     # Only send audio to backend if RMS > this value. Helps filter background noise.

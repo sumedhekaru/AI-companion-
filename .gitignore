@@ -107,5 +107,7 @@ temp/
 *.tmp
 *.temp
 
+# Models (too large for git)
+code/models/vosk-model-*/
 Reference/
 Recordings/

@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from stt import StreamingTranscriber
+from stt_vosk import VoskStreamingTranscriber
 from config import SpeechToTextConfig
 
 logging.basicConfig(level=logging.INFO)
@@ -34,7 +34,7 @@ async def root() -> str:
 @app.websocket("/ws")
 async def audio_stream(ws: WebSocket):
     await ws.accept()
-    transcriber = StreamingTranscriber()
+    transcriber = VoskStreamingTranscriber()
     bytes_received = 0
     result_task = asyncio.create_task(_queue_reader(ws, transcriber.result_queue))
     try:

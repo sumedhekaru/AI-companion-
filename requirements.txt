@@ -1,5 +1,4 @@
-# speech to text and text to speech
-realtimestt==0.3.104
+# text to speech
 realtimetts[kokoro,coqui,orpheus]==0.5.5
 
 # webserver dependencies
@@ -13,17 +12,9 @@ python-dotenv
 ollama
 openai
 
-# audio processing
-torch
-torchaudio
-numpy
-whisper-openai
-pydub
-
-# faster STT alternatives
-speechrecognition
+# speech to text (Vosk for real-time streaming)
 vosk
-faster-whisper
+numpy
 
 # data validation
 pydantic
