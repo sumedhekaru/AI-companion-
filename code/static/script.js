@@ -25,12 +25,15 @@ let mediaStream = null;
 let currentUserMessage = "";
 let isProcessing = false;
 let processingMessageEl = null;
-let silenceTimer = null;
 
 // Silence detection variables
 let frontendSilenceTimer = null;
 let lastAudioTime = null;
 let isSpeechActive = false; // Track if we're currently in a speech session
+
+// Pre-buffer for capturing first words
+let preBuffer = [];
+const PRE_BUFFER_SIZE = 10; // Keep last 10 chunks before speech detection
 
 function updateStatus(text) {
   statusEl.textContent = text;
@@ -67,30 +70,6 @@ function finishProcessing(finalContent) {
     isProcessing = false;
     processingMessageEl = null;
     messagesEl.scrollTop = messagesEl.scrollHeight;
-    
-    // Start silence timer after finishing processing
-    startSilenceTimer();
-  }
-}
-
-function startSilenceTimer() {
-  // Clear any existing timer
-  if (silenceTimer) {
-    clearTimeout(silenceTimer);
-  }
-  
-  // Set timer for 5 seconds of silence
-  silenceTimer = setTimeout(() => {
-    if (currentUserMessage.trim()) {
-      simulateLLMResponse();
-    }
-  }, 5000);
-}
-
-function resetSilenceTimer() {
-  if (silenceTimer) {
-    clearTimeout(silenceTimer);
-    silenceTimer = null;
   }
 }
 
@@ -221,7 +200,6 @@ async function startStreaming() {
     currentUserMessage = "";
     isProcessing = false;
     processingMessageEl = null;
-    resetSilenceTimer();
 
     // Start frontend silence detection (monitoring mode)
     resetFrontendSilenceTimer();
@@ -241,6 +219,12 @@ async function startStreaming() {
         }
         const rms = Math.sqrt(sum / inputBuffer.length);
         
+        // Convert audio chunk to PCM for buffering
+        const pcm = new Int16Array(inputBuffer.length);
+        for (let i = 0; i < inputBuffer.length; i++) {
+          pcm[i] = Math.max(-32768, Math.min(32767, inputBuffer[i] * 32768));
+        }
+        
         // Check for speech vs silence
         if (rms > CONFIG.SILENCE_THRESHOLD) {
           // Speech detected
@@ -250,29 +234,31 @@ async function startStreaming() {
             // Require sustained speech to start a session (prevent false triggers)
             setTimeout(() => {
               if (!isSpeechActive && rms > CONFIG.SILENCE_THRESHOLD) {
-                startSpeechSession();
+                startSpeechSession(preBuffer);
               }
             }, CONFIG.SPEECH_DEBOUNCE_MS); // 50ms debounce for faster response
           } else {
-            // Already in speech session - reset silence timer
+            // Already in speech session - reset silence timer and send audio
             resetFrontendSilenceTimer();
-          }
-          
-          // Only send if audio level is above threshold and we're in a speech session
-          if (isSpeechActive && rms > CONFIG.RMS_THRESHOLD) {
-            // Convert float32 [-1,1] to int16 little-endian
-            const pcm = new Int16Array(inputBuffer.length);
-            for (let i = 0; i < inputBuffer.length; i++) {
-              pcm[i] = Math.max(-32768, Math.min(32767, inputBuffer[i] * 32768));
+            
+            // Only send if audio level is above threshold
+            if (rms > CONFIG.RMS_THRESHOLD) {
+              ws.send(pcm.buffer);
             }
-            ws.send(pcm.buffer);
           }
         }
-        // If rms <= SILENCE_THRESHOLD, we're in silence - timer will handle session end
+        
+        // Always maintain pre-buffer (even in silence)
+        if (rms > CONFIG.RMS_THRESHOLD) {
+          preBuffer.push(pcm.buffer);
+          if (preBuffer.length > PRE_BUFFER_SIZE) {
+            preBuffer.shift(); // Remove oldest chunk
+          }
+        }
       }
     };
 
-function startSpeechSession() {
+function startSpeechSession(buffer = []) {
   if (!isSpeechActive) {
     isSpeechActive = true;
     updateStatus("Transcribing...");
@@ -280,8 +266,19 @@ function startSpeechSession() {
     processingMessageEl = messagesEl.querySelector(".message.user:last-of-type");
     processingMessageEl.classList.add('recording');
     isProcessing = true;
+    
+    // Send pre-buffer first to capture first words
+    buffer.forEach(chunk => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(chunk);
+      }
+    });
+    
     resetFrontendSilenceTimer();
     console.log("Speech session started");
+    
+    // Clear pre-buffer after use
+    preBuffer = [];
   }
 }
 
@@ -315,9 +312,6 @@ function startSpeechSession() {
     
     // Handle final transcription results
     if (msg) {
-      // Reset silence timer when we get new transcription
-      resetSilenceTimer();
-      
       // Update the existing processing message
       currentUserMessage += (currentUserMessage ? " " : "") + msg;
       
@@ -337,7 +331,6 @@ function startSpeechSession() {
   ws.onclose = () => {
     updateStatus("Connection closed.");
     recordingIndicator.style.display = "none";
-    resetSilenceTimer();
     stopFrontendSilenceTimer();
     // Finish any ongoing processing
     if (isProcessing && currentUserMessage) {
@@ -379,7 +372,6 @@ startBtn.addEventListener("click", startStreaming);
 stopBtn.addEventListener("click", () => {
   updateStatus("Stopping...");
   recordingIndicator.style.display = "none";
-  resetSilenceTimer();
   stopFrontendSilenceTimer();
   
   // Finish any ongoing processing
