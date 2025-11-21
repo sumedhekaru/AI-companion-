@@ -66,7 +66,6 @@ async def audio_stream(ws: WebSocket):
 
             chunk = message.get("bytes")
             if chunk:
-                logger.info(f"🔊 Received WebSocket binary chunk: {len(chunk)} bytes.")
                 bytes_received += len(chunk)
                 if bytes_received % (64 * 1024) < len(chunk):
                     try:
