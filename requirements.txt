@@ -4,7 +4,7 @@ realtimetts[kokoro,coqui,orpheus]==0.5.5
 
 # webserver dependencies
 fastapi
-uvicorn
+uvicorn[standard]
 
 # configuration
 python-dotenv
@@ -12,5 +12,15 @@ python-dotenv
 # llm providers
 ollama
 openai
+
+# audio processing
+torch
+torchaudio
+numpy
+whisper-openai
+pydub
+
+# data validation
+pydantic
 
 # transformers is required by Coqui XTTS, using default bundled version
