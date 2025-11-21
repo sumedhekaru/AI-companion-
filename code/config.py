@@ -39,18 +39,18 @@ class TextToSpeechConfig:
     
     # TTS Engine settings
     engine: str = "kokoro"
-    voice: str = "af_heart"  # Default voice: Heart (US Female)
+    voice: str = "af_heart"  # Default voice: Heart (American Female)
     speed: float = 1.0  # Normal speech speed
     enabled: bool = True  # TTS enabled by default
     
-    # Streaming optimization settings
-    fast_sentence_fragment: bool = True  # Enable streaming for faster response
-    minimum_sentence_length: int = 5     # Start synthesis early
-    minimum_first_fragment_length: int = 3  # Start with very short fragments
-    comma_silence_duration: float = 0.1    # Reduced silence for faster flow
-    sentence_silence_duration: float = 0.2 # Reduced sentence pauses
-    default_silence_duration: float = 0.1  # Reduced default silence
-    force_first_fragment_after_words: int = 3  # Force early synthesis
+    # Natural speech settings (no artificial chunking)
+    fast_sentence_fragment: bool = False  # Disable artificial fragmenting
+    minimum_sentence_length: int = 20    # Wait for complete sentences
+    minimum_first_fragment_length: int = 10  # Don't start with tiny fragments
+    comma_silence_duration: float = 0.3    # Natural comma pauses
+    sentence_silence_duration: float = 0.6 # Natural sentence pauses
+    default_silence_duration: float = 0.3  # Natural pause duration
+    force_first_fragment_after_words: int = 15  # Wait for substantial content
     
     # Available Kokoro voices
     available_voices: List[Dict[str, str]] = None
@@ -58,6 +58,10 @@ class TextToSpeechConfig:
     def __post_init__(self):
         """Initialize available voices if not provided."""
         if self.available_voices is None:
+            # Available Kokoro voice examples for reference
+            # Executive/Professional: bm_george (British Male), am_michael (American Male)
+            # Friendly/Approachable: af_heart (American Female), af_sarah (American Female)
+            # Clear/Articulate: bf_emma (British Female), am_adam (American Male)
             self.available_voices = [
                 {"id": "af_heart", "name": "American Female - Heart", "gender": "female", "language": "en-US"},
                 {"id": "af_sarah", "name": "American Female - Sarah", "gender": "female", "language": "en-US"},

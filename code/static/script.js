@@ -42,8 +42,6 @@ let preBuffer = [];
 const PRE_BUFFER_SIZE = 10; // Keep last 10 chunks before speech detection
 
 // TTS variables
-let availableVoices = [];
-let currentTTSVoice = CONFIG.TTS_VOICE;
 let isTTSEnabled = CONFIG.TTS_ENABLED;
 
 function updateStatus(text) {
@@ -179,21 +177,6 @@ async function loadConfig() {
   }
 }
 
-// Load TTS voices from backend
-async function loadTTSVoices() {
-  try {
-    const response = await fetch('/tts/voices');
-    const data = await response.json();
-    
-    availableVoices = data.voices || [];
-    console.log(`🔊 Loaded ${availableVoices.length} TTS voices`);
-    return availableVoices;
-  } catch (error) {
-    console.error('🔊 Failed to load TTS voices:', error);
-    return [];
-  }
-}
-
 // TTS functions
 async function playTTSAudio(text) {
   if (!isTTSEnabled || !text || !text.trim()) {
@@ -210,9 +193,8 @@ async function playTTSAudio(text) {
       },
       body: JSON.stringify({
         text: text,
-        voice: currentTTSVoice,
-        speed: CONFIG.TTS_SPEED
-      })
+        // Voice is now set by backend config
+      }),
     });
 
     const data = await response.json();
@@ -254,11 +236,6 @@ function toggleTTS() {
   isTTSEnabled = !isTTSEnabled;
   console.log('TTS enabled:', isTTSEnabled);
   return isTTSEnabled;
-}
-
-function setTTSVoice(voiceId) {
-  currentTTSVoice = voiceId;
-  console.log('TTS voice changed to:', voiceId);
 }
 
 function simulateLLMResponse() {
@@ -518,36 +495,19 @@ stopBtn.addEventListener("click", () => {
 window.addEventListener('load', async () => {
   // Load configuration from backend first
   await loadConfig();
-  await loadTTSVoices();
   setupTTSControls();
   console.log('TTS system initialized with configuration from backend');
 });
 
 function setupTTSControls() {
-  const voiceSelect = document.getElementById('voiceSelect');
   const toggleTTSBtn = document.getElementById('toggleTTS');
   
-  // Populate voice dropdown
-  voiceSelect.innerHTML = '';
-  availableVoices.forEach(voice => {
-    const option = document.createElement('option');
-    option.value = voice.id;
-    option.textContent = `${voice.name} (${voice.gender})`;
-    if (voice.id === currentTTSVoice) {
-      option.selected = true;
-    }
-    voiceSelect.appendChild(option);
-  });
+  // Set initial TTS state from config
+  isTTSEnabled = CONFIG.TTS_ENABLED;
+  updateTTSButton();
   
-  // Voice selection handler
-  voiceSelect.addEventListener('change', (e) => {
-    setTTSVoice(e.target.value);
-  });
+  // Add click handler for TTS toggle
+  toggleTTSBtn.addEventListener('click', toggleTTS);
   
-  // TTS toggle handler
-  toggleTTSBtn.addEventListener('click', () => {
-    const enabled = toggleTTS();
-    toggleTTSBtn.textContent = enabled ? '🔊 TTS ON' : '🔇 TTS OFF';
-    toggleTTSBtn.style.background = enabled ? '#17a2b8' : '#6c757d';
-  });
+  console.log('TTS controls initialized');
 }

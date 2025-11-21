@@ -146,25 +146,6 @@ async def _queue_reader(ws: WebSocket, queue: asyncio.Queue[str]):
 # TTS Endpoints
 class TTSRequest(BaseModel):
     text: str
-    voice: str = "af_heart"  # Default Kokoro voice
-    speed: float = 1.0
-
-
-class TTSVoiceResponse(BaseModel):
-    voices: list
-
-
-@app.get("/tts/voices", response_model=TTSVoiceResponse)
-async def get_tts_voices():
-    """Get available TTS voices."""
-    try:
-        processor = get_tts_processor()
-        voices = processor.get_available_voices()
-        logger.info(f"🔊 Returning {len(voices)} available TTS voices")
-        return {"voices": voices}
-    except Exception as e:
-        logger.error(f"🔊 Failed to get TTS voices: {e}")
-        return {"voices": []}
 
 
 @app.post("/tts/synthesize")
@@ -173,13 +154,7 @@ async def synthesize_tts(request: TTSRequest):
     try:
         processor = get_tts_processor()
         
-        # Set voice and speed if different from current
-        if request.voice != processor.current_voice:
-            processor.set_voice(request.voice)
-        if abs(request.speed - processor.speed) > 0.01:
-            processor.set_speed(request.speed)
-        
-        # Synthesize speech
+        # Synthesize speech (voice is set by config)
         logger.info(f"🔊 Synthesizing TTS: {request.text[:50]}...")
         audio_bytes = await processor.synthesize_async(request.text)
         
@@ -202,34 +177,6 @@ async def synthesize_tts(request: TTSRequest):
         return {"error": str(e)}
 
 
-@app.post("/tts/speak")
-async def speak_tts(request: TTSRequest):
-    """Synthesize and immediately play speech (for testing)."""
-    try:
-        processor = get_tts_processor()
-        
-        # Set voice and speed if different from current
-        if request.voice != processor.current_voice:
-            processor.set_voice(request.voice)
-        if abs(request.speed - processor.speed) > 0.01:
-            processor.set_speed(request.speed)
-        
-        # Synthesize speech synchronously for immediate playback
-        logger.info(f"🔊 Speaking TTS: {request.text[:50]}...")
-        audio_bytes = processor.synthesize_sync(request.text)
-        
-        if audio_bytes:
-            logger.info(f"🔊 TTS playback successful: {len(audio_bytes)} bytes")
-            return {"success": True, "message": "Speech played successfully"}
-        else:
-            logger.error("🔊 TTS playback failed")
-            return {"success": False, "error": "TTS synthesis failed"}
-            
-    except Exception as e:
-        logger.error(f"🔊 TTS playback error: {e}")
-        return {"success": False, "error": str(e)}
-
-
 # Configuration Endpoints
 class ConfigResponse(BaseModel):
     tts: Dict[str, Any]
@@ -248,16 +195,6 @@ async def get_config():
         }
     except Exception as e:
         logger.error(f"🔊 Failed to get config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/tts/config")
-async def get_tts_config():
-    """Get TTS configuration."""
-    try:
-        return get_tts_config_dict()
-    except Exception as e:
-        logger.error(f"🔊 Failed to get TTS config: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

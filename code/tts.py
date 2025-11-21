@@ -71,68 +71,6 @@ class KokoroTTSProcessor:
         """Callback when audio stream stops."""
         self.finished_event.set()
     
-    def get_available_voices(self) -> list:
-        """Get list of available Kokoro voices from config."""
-        return tts_config.available_voices
-    
-    def set_voice(self, voice_id: str) -> bool:
-        """Set the TTS voice by ID."""
-        try:
-            # Reinitialize Kokoro engine with new voice
-            self.engine = KokoroEngine(
-                voice=voice_id,
-                default_speed=self.speed,
-                trim_silence=True,
-                silence_threshold=0.01,
-                extra_start_ms=25,
-                extra_end_ms=15,
-                fade_in_ms=15,
-                fade_out_ms=10,
-            )
-            
-            # Reinitialize TextToAudioStream with new engine
-            self.stream = TextToAudioStream(
-                self.engine,
-                muted=True,
-                on_audio_stream_stop=self._on_audio_stream_stop,
-            )
-            
-            self.current_voice = voice_id
-            logger.info(f"🔊 Voice changed to: {voice_id}")
-            return True
-        except Exception as e:
-            logger.error(f"🔊 Failed to set voice {voice_id}: {e}")
-            return False
-    
-    def set_speed(self, speed: float) -> bool:
-        """Set speech speed. Typical range: 0.5-2.0."""
-        try:
-            # Reinitialize Kokoro engine with new speed
-            self.engine = KokoroEngine(
-                voice=self.current_voice,
-                default_speed=speed,
-                trim_silence=True,
-                silence_threshold=0.01,
-                extra_start_ms=25,
-                extra_end_ms=15,
-                fade_in_ms=15,
-                fade_out_ms=10,
-            )
-            
-            # Reinitialize TextToAudioStream with new engine
-            self.stream = TextToAudioStream(
-                self.engine,
-                muted=True,
-                on_audio_stream_stop=self._on_audio_stream_stop,
-            )
-            
-            self.speed = speed
-            logger.info(f"🔊 Speech speed set to {speed}")
-            return True
-        except Exception as e:
-            logger.error(f"🔊 Failed to set speech speed {speed}: {e}")
-            return False
-    
     def synthesize_sync(self, text: str) -> Optional[bytes]:
         """
         Synthesize speech synchronously and return audio bytes.
@@ -252,7 +190,7 @@ def get_tts_processor() -> KokoroTTSProcessor:
 
 async def synthesize_speech(text: str) -> Optional[bytes]:
     """
-    Convenience function to synthesize speech asynchronously.
+    Convenience function to synthesize speech.
     
     Args:
         text: Text to synthesize
@@ -262,36 +200,3 @@ async def synthesize_speech(text: str) -> Optional[bytes]:
     """
     processor = get_tts_processor()
     return await processor.synthesize_async(text)
-
-if __name__ == "__main__":
-    # Test TTS functionality
-    import sys
-    
-    logging.basicConfig(level=logging.INFO)
-    
-    processor = KokoroTTSProcessor()
-    
-    # List available voices
-    voices = processor.get_available_voices()
-    print("Available Kokoro voices:")
-    for voice in voices:
-        print(f"  {voice['id']}: {voice['name']} ({voice['gender']})")
-    
-    # Test synthesis
-    test_text = "Hello! This is a test of the Kokoro text-to-speech system with natural sounding voices."
-    
-    async def test_synthesis():
-        audio_bytes = await processor.synthesize_async(test_text)
-        
-        if audio_bytes:
-            print(f"✅ Kokoro TTS synthesis successful: {len(audio_bytes)} bytes")
-            
-            # Save to file for testing
-            with open("test_kokoro_output.wav", "wb") as f:
-                f.write(audio_bytes)
-            print("💾 Saved to test_kokoro_output.wav")
-        else:
-            print("❌ Kokoro TTS synthesis failed")
-    
-    # Run async test
-    asyncio.run(test_synthesis())
