@@ -9,11 +9,12 @@ class SpeechToTextConfig:
     # Whisper model
     # Options: "tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large", "large-v2", "large-v3"
     # Smaller models are faster but less accurate. English-specific models (e.g., "base.en") only support English.
-    whisper_model: str = "small"
+    whisper_model: str = "tiny.en"
 
     # Device to run Whisper on
     # "cuda" if available for GPU acceleration, otherwise "cpu"
-    device: str = "cpu"
+    # For Mac: "mps" for Metal Performance Shaders acceleration
+    device: str = "mps"
 
     # Silence detection: wait this many milliseconds of audio below the frontend RMS threshold before transcribing.
     # Lower values reduce latency but may split sentences. Typical range: 100–800 ms.
@@ -21,7 +22,7 @@ class SpeechToTextConfig:
 
     # Maximum buffer time: transcribe after this many milliseconds even if silence is not detected.
     # Prevents very long transcription delays. Typical range: 2000–5000 ms.
-    max_buffer_ms: int = 3000
+    max_buffer_ms: int = 1500
 
     # Minimum audio bytes required to attempt transcription.
     # Helps avoid hallucinations on very short buffers. 8000 bytes ≈ 0.5 s at 16 kHz.

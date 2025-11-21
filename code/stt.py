@@ -41,6 +41,7 @@ class StreamingTranscriber:
         self.last_chunk_time = None
         self._transcription_task = None
         self.result_queue: asyncio.Queue[str] = asyncio.Queue()
+        self._first_chunk_time = None  # Track latency start time
 
     async def add_chunk(self, chunk: bytes) -> None:
         """
@@ -49,6 +50,9 @@ class StreamingTranscriber:
         """
         now = time.time()
         self.last_chunk_time = now
+        if self._first_chunk_time is None:
+            self._first_chunk_time = now
+            logger.info("🔊 First chunk received - starting latency timer")
         self.buffer.write(chunk)
         logger.debug(f"🔊 Added chunk of {len(chunk)} bytes.")
 
@@ -92,12 +96,27 @@ class StreamingTranscriber:
         """
         Transcribe the current buffer (raw PCM) and clear it; push results to queue.
         """
+        transcription_start = time.time()
         audio_bytes = self.buffer.getvalue()
+        
+        # Calculate total latency so far
+        total_latency = transcription_start - (self._first_chunk_time or transcription_start)
+        logger.info(f"🔊 Total latency before transcription: {total_latency:.2f}s")
+        
         logger.info(f"🔊 Transcribing {len(audio_bytes)} bytes of PCM.")
         self.buffer.seek(0)
         self.buffer.truncate(0)
         if not audio_bytes or len(audio_bytes) < self.min_buffer_bytes:
             logger.warning(f"🔊 Skipping short audio ({len(audio_bytes)} bytes < {self.min_buffer_bytes}).")
+            self._first_chunk_time = None  # Reset latency timer
+            return
+        
+        # Check if audio is actually silent (RMS threshold)
+        audio_array = np.frombuffer(audio_bytes, dtype=np.int16)
+        rms = np.sqrt(np.mean(audio_array.astype(np.float32)**2))
+        if rms < 0.01:  # Silence threshold
+            logger.info(f"🔊 Skipping silent audio (RMS: {rms:.4f})")
+            self._first_chunk_time = None  # Reset latency timer
             return
         # Write a proper WAV file from raw PCM (int16 LE, 16kHz mono)
         wav_path = self.cfg.recordings_dir / "temp_audio.wav"
@@ -117,7 +136,14 @@ class StreamingTranscriber:
             wav_f.write(len(audio_bytes).to_bytes(4, "little"))
             wav_f.write(audio_bytes)
         try:
+            transcription_time_start = time.time()
             result = MODEL.transcribe(str(wav_path), language="en")
+            transcription_time = time.time() - transcription_time_start
+            
+            total_end_to_end_latency = time.time() - (self._first_chunk_time or transcription_time_start)
+            logger.info(f"🔊 Transcription time: {transcription_time:.2f}s")
+            logger.info(f"🔊 End-to-end latency: {total_end_to_end_latency:.2f}s")
+            
             for segment in result["segments"]:
                 txt = segment["text"].strip()
                 if txt:
@@ -128,3 +154,4 @@ class StreamingTranscriber:
             await self.result_queue.put("[Transcription error]")
         finally:
             wav_path.unlink(missing_ok=True)
+            self._first_chunk_time = None  # Reset latency timer for next utterance

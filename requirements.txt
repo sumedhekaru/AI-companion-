@@ -20,6 +20,11 @@ numpy
 whisper-openai
 pydub
 
+# faster STT alternatives
+speechrecognition
+vosk
+faster-whisper
+
 # data validation
 pydantic
 
