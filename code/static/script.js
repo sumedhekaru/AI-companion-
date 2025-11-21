@@ -19,11 +19,21 @@ const CONFIG = {
   TTS_ENABLED: true, // Enable/disable TTS
 };
 
+// Conversation management
+let currentConversationId = null;
+let conversations = [];
+
+// DOM elements
 const statusEl = document.getElementById("status");
 const startBtn = document.getElementById("start");
 const stopBtn = document.getElementById("stop");
 const messagesEl = document.getElementById("messages");
 const recordingIndicator = document.getElementById("recordingIndicator");
+const sidebarEl = document.getElementById("sidebar");
+const sidebarToggleBtn = document.getElementById("sidebarToggle");
+const toggleSidebarBtn = document.getElementById("toggleSidebar");
+const newChatBtn = document.getElementById("newChat");
+const conversationListEl = document.getElementById("conversationList");
 
 let ws = null;
 let mediaRecorder = null;
@@ -46,6 +56,53 @@ let isTTSEnabled = CONFIG.TTS_ENABLED;
 
 function updateStatus(text) {
   statusEl.textContent = text;
+}
+
+// Sidebar functions
+function toggleSidebar() {
+  sidebarEl.classList.toggle('collapsed');
+}
+
+function createNewConversation() {
+  currentConversationId = generateConversationId();
+  clearMessages();
+  loadConversations();
+}
+
+function generateConversationId() {
+  return 'conv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+function clearMessages() {
+  messagesEl.innerHTML = '';
+}
+
+function loadConversations() {
+  // TODO: Load from backend when conversation storage is implemented
+  // For now, show placeholder
+  conversationListEl.innerHTML = `
+    <div class="conversation-item active">
+      New Conversation
+      <div class="conversation-date">Just now</div>
+    </div>
+  `;
+}
+
+function selectConversation(conversationId) {
+  // Remove active class from all conversations
+  document.querySelectorAll('.conversation-item').forEach(item => {
+    item.classList.remove('active');
+  });
+  
+  // Add active class to selected conversation
+  const selectedItem = document.querySelector(`[data-conversation-id="${conversationId}"]`);
+  if (selectedItem) {
+    selectedItem.classList.add('active');
+  }
+  
+  currentConversationId = conversationId;
+  // TODO: Load conversation messages from backend
+  clearMessages();
 }
 
 function addMessage(content, role, showProcessing = false) {
@@ -491,12 +548,13 @@ stopBtn.addEventListener("click", () => {
   cleanup();
 });
 
-// Initialize TTS on page load
+// Initialize app on page load
 window.addEventListener('load', async () => {
   // Load configuration from backend first
   await loadConfig();
+  setupSidebarControls();
   setupTTSControls();
-  console.log('TTS system initialized with configuration from backend');
+  console.log('AI Companion initialized with sidebar and TTS');
 });
 
 function setupTTSControls() {
@@ -510,4 +568,16 @@ function setupTTSControls() {
   toggleTTSBtn.addEventListener('click', toggleTTS);
   
   console.log('TTS controls initialized');
+}
+
+function setupSidebarControls() {
+  // Add event listeners for sidebar
+  sidebarToggleBtn.addEventListener('click', toggleSidebar);
+  toggleSidebarBtn.addEventListener('click', toggleSidebar);
+  newChatBtn.addEventListener('click', createNewConversation);
+  
+  // Initialize with a new conversation
+  createNewConversation();
+  
+  console.log('Sidebar controls initialized');
 }

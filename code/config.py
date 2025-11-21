@@ -33,6 +33,32 @@ class SpeechToTextConfig:
     # Suppress OpenMP duplicate library warnings on macOS
     kmp_duplicate_lib_ok: bool = True
 
+# Data and storage configuration
+@dataclass
+class DataConfig:
+    """Configuration for local data storage."""
+    
+    # Database settings
+    database_path: Path = Path(__file__).parent.parent / "data" / "conversations.db"
+    
+    # Data directories
+    data_dir: Path = Path(__file__).parent.parent / "data"
+    exports_dir: Path = Path(__file__).parent.parent / "data" / "exports"
+    
+    # Backup settings
+    auto_backup: bool = True
+    backup_interval_hours: int = 24
+    max_backups: int = 7
+    
+    def __post_init__(self):
+        """Ensure data directories exist."""
+        self.data_dir.mkdir(exist_ok=True)
+        self.exports_dir.mkdir(exist_ok=True)
+        
+        # Override with environment variables if set
+        self.database_path = Path(os.getenv("DATABASE_PATH", self.database_path))
+        self.auto_backup = os.getenv("AUTO_BACKUP", "true").lower() == "true"
+
 @dataclass 
 class TextToSpeechConfig:
     """Configuration for text-to-speech synthesis."""
@@ -111,6 +137,7 @@ stt_config = SpeechToTextConfig()
 tts_config = TextToSpeechConfig()
 llm_config = LLMConfig()
 server_config = ServerConfig()
+data_config = DataConfig()
 
 def get_tts_config_dict() -> Dict[str, Any]:
     """Get TTS configuration as a dictionary."""

@@ -64,7 +64,13 @@ tensorboard_logs/
 *.feather
 *.h5
 *.hdf5
-data/
+
+# Specific database files - keep data folder structure but ignore contents
+/data/*.db
+/data/*.sqlite
+/data/*.sqlite3
+!/data/.gitkeep
+
 datasets/
 raw_data/
 processed_data/
