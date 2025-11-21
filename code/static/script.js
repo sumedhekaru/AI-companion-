@@ -11,6 +11,7 @@ const CONFIG = {
   
   // Latency optimizations
   SPEECH_DEBOUNCE_MS: 50, // Reduced from 200ms for faster speech detection
+  DONE_DELAY_MS: 500, // Delay before sending DONE to let Vosk process final word
 };
 
 const statusEl = document.getElementById("status");
@@ -83,8 +84,12 @@ function startFrontendSilenceTimer() {
   // Only set timer if we're in an active speech session
   if (isSpeechActive) {
     frontendSilenceTimer = setTimeout(() => {
-      console.log("Silence detected - sending DONE");
-      sendDoneSignal();
+      console.log("Silence detected - waiting before sending DONE");
+      // Add delay to let Vosk process final word
+      setTimeout(() => {
+        console.log("Sending DONE after delay");
+        sendDoneSignal();
+      }, CONFIG.DONE_DELAY_MS);
     }, CONFIG.SILENCE_TIMEOUT_MS);
   }
 }
