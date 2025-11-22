@@ -1,735 +1,312 @@
-// Frontend configuration (mirrors SpeechToTextConfig in Python)
+// AI Companion - JavaScript with Speech Recognition
+// Immediate bubble feedback and ChatGPT-style sidebar
+
+// Configuration thresholds
 const CONFIG = {
-  SAMPLE_RATE: 16000,
-  CHANNELS: 1,
-  FRAME_SIZE: 1024, // Reduced from 4096 for faster processing
-  RMS_THRESHOLD: 0.02, // Will be updated from config
-  
-  // Silence detection for DONE signal
-  SILENCE_THRESHOLD: 0.01,  // RMS threshold below which audio is considered "silent"
-  SILENCE_TIMEOUT_MS: 3000, // Time in milliseconds of silence before sending DONE signal (will be updated from config)
-  
-  // Latency optimizations
-  SPEECH_DEBOUNCE_MS: 50, // Reduced from 200ms for faster speech detection
-  DONE_DELAY_MS: 500, // Delay before sending DONE to let Vosk process final word
-  
-  // TTS configuration
-  TTS_VOICE: "af_heart", // Default Kokoro voice
-  TTS_SPEED: 1.0, // Default speech speed
-  TTS_ENABLED: true, // Enable/disable TTS
+    SILENCE_TIMEOUT_MS: 3000,
+    SPEECH_RECOGNITION_LANG: "en-US",
+    MAX_MESSAGE_LENGTH: 1000,
+    ANIMATION_SPEED_MS: 200,
+    ENABLE_CONSOLE_LOGS: true,
+    ENABLE_DEBUG_BUBBLE_LOGS: false
 };
 
-// Conversation management
-let currentConversationId = null;
-let conversations = [];
+let isListening = false;
+let currentText = "";
+let messageBubble = null;
+let silenceTimer = null;
+let ttsEnabled = true;
+let conversationHistory = []; // Store conversation for memory
 
-// DOM elements
-const statusEl = document.getElementById("status");
-const startBtn = document.getElementById("start");
-const stopBtn = document.getElementById("stop");
-const messagesEl = document.getElementById("messages");
-const recordingIndicator = document.getElementById("recordingIndicator");
-const sidebarEl = document.getElementById("sidebar");
-const sidebarToggleBtn = document.getElementById("sidebarToggle");
-const toggleSidebarBtn = document.getElementById("toggleSidebar");
-const newChatBtn = document.getElementById("newChat");
-const conversationListEl = document.getElementById("conversationList");
+const startBtn = document.getElementById('startBtn');
+const stopBtn = document.getElementById('stopBtn');
+const statusEl = document.getElementById('status');
+const messagesEl = document.getElementById('messages');
+const ttsToggle = document.getElementById('ttsToggle');
+const clearBtn = document.getElementById('clearBtn');
 
-let ws = null;
-let mediaRecorder = null;
-let mediaStream = null;
-let currentUserMessage = "";
-let isProcessing = false;
-let processingMessageEl = null;
-
-// Silence detection variables
-let frontendSilenceTimer = null;
-let lastAudioTime = null;
-let isSpeechActive = false; // Track if we're currently in a speech session
-
-// Pre-buffer for capturing first words
-let preBuffer = [];
-const PRE_BUFFER_SIZE = 10; // Keep last 10 chunks before speech detection
-
-// TTS variables
-let isTTSEnabled = CONFIG.TTS_ENABLED;
+document.addEventListener('DOMContentLoaded', () => {
+    if (CONFIG.ENABLE_CONSOLE_LOGS) console.log('🚀 AI Companion loaded');
+    updateStatus('Ready');
+    
+    startBtn.addEventListener('click', startListening);
+    stopBtn.addEventListener('click', stopListening);
+    ttsToggle.addEventListener('change', toggleTTS);
+    clearBtn.addEventListener('click', clearConversation);
+    
+    loadSettings();
+});
 
 function updateStatus(text) {
-  statusEl.textContent = text;
+    statusEl.textContent = text;
 }
 
-// Sidebar functions
-function toggleSidebar() {
-  sidebarEl.classList.toggle('collapsed');
-}
-
-function createNewConversation() {
-  currentConversationId = generateConversationId();
-  clearMessages();
-  loadConversations();
-}
-
-function generateConversationId() {
-  return 'conv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-}
-
-function clearMessages() {
-  messagesEl.innerHTML = '';
-}
-
-function loadConversations() {
-  // TODO: Load from backend when conversation storage is implemented
-  // For now, show placeholder
-  conversationListEl.innerHTML = `
-    <div class="conversation-item active">
-      New Conversation
-      <div class="conversation-date">Just now</div>
-    </div>
-  `;
-}
-
-function selectConversation(conversationId) {
-  // Remove active class from all conversations
-  document.querySelectorAll('.conversation-item').forEach(item => {
-    item.classList.remove('active');
-  });
-  
-  // Add active class to selected conversation
-  const selectedItem = document.querySelector(`[data-conversation-id="${conversationId}"]`);
-  if (selectedItem) {
-    selectedItem.classList.add('active');
-  }
-  
-  currentConversationId = conversationId;
-  // TODO: Load conversation messages from backend
-  clearMessages();
-}
-
-function addMessage(content, role, showProcessing = false) {
-  const div = document.createElement("div");
-  div.className = `message ${role}`;
-  
-  if (showProcessing) {
-    div.innerHTML = content + '<span class="processing-indicator"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>';
-    isProcessing = true;
-    processingMessageEl = div;
-  } else {
-    div.textContent = content;
-  }
-  
-  messagesEl.appendChild(div);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-  return div;
-}
-
-function updateProcessingMessage(content) {
-  if (processingMessageEl && isProcessing) {
-    processingMessageEl.innerHTML = content + '<span class="processing-indicator"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>';
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-  }
-}
-
-function finishProcessing(finalContent) {
-  if (processingMessageEl && isProcessing) {
-    processingMessageEl.innerHTML = finalContent;
-    processingMessageEl.classList.remove('recording');
-    isProcessing = false;
-    processingMessageEl = null;
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-  }
-}
-
-// Frontend silence detection functions
-function startFrontendSilenceTimer() {
-  // Clear any existing timer
-  if (frontendSilenceTimer) {
-    clearTimeout(frontendSilenceTimer);
-  }
-  
-  // Only set timer if we're in an active speech session
-  if (isSpeechActive) {
-    frontendSilenceTimer = setTimeout(() => {
-      console.log("Silence detected - waiting before sending DONE");
-      // Add delay to let Vosk process final word
-      setTimeout(() => {
-        console.log("Sending DONE after delay");
-        sendDoneSignal();
-      }, CONFIG.DONE_DELAY_MS);
-    }, CONFIG.SILENCE_TIMEOUT_MS);
-  }
-}
-
-function resetFrontendSilenceTimer() {
-  if (frontendSilenceTimer) {
-    clearTimeout(frontendSilenceTimer);
-    frontendSilenceTimer = null;
-  }
-  lastAudioTime = Date.now();
-  
-  // Only restart timer if speech is active
-  if (isSpeechActive) {
-    startFrontendSilenceTimer();
-  }
-}
-
-function stopFrontendSilenceTimer() {
-  if (frontendSilenceTimer) {
-    clearTimeout(frontendSilenceTimer);
-    frontendSilenceTimer = null;
-  }
-}
-
-function sendDoneSignal() {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send("DONE");
-    console.log("DONE sent");
-    
-    // End the current speech session
-    endSpeechSession();
-    
-    // Trigger LLM response after a short delay to let backend process
-    setTimeout(() => {
-      if (currentUserMessage.trim()) {
-        finishProcessing(currentUserMessage);
-        
-        // Trigger LLM response
-        setTimeout(() => {
-          getStreamingAIResponse(currentUserMessage);
-          
-          // Reset state for next turn after triggering streaming
-          currentUserMessage = "";
-          isProcessing = false;
-          processingMessageEl = null;
-        }, 500);
-        
-        // Don't reset state yet - wait until after LLM response
-        // currentUserMessage will be reset in getAIResponse after successful call
-      }
-    }, 1500); // Wait 1.5 seconds for backend to process DONE
-  }
-}
-
-function endSpeechSession() {
-  isSpeechActive = false;
-  stopFrontendSilenceTimer();
-  console.log("Speech session ended");
-}
-
-// Load configuration from backend
-async function loadConfig() {
-  try {
-    const response = await fetch('/config');
-    const config = await response.json();
-    
-    // Update TTS configuration from backend
-    CONFIG.TTS_VOICE = config.tts.voice;
-    CONFIG.TTS_SPEED = config.tts.speed;
-    CONFIG.TTS_ENABLED = config.tts.enabled;
-    availableVoices = config.tts.available_voices;
-    
-    // Update STT configuration from backend
-    CONFIG.SILENCE_TIMEOUT_MS = config.stt.frontend_silence_timeout_ms;
-    CONFIG.RMS_THRESHOLD = config.stt.frontend_rms_threshold;
-    CONFIG.SILENCE_THRESHOLD = config.stt.frontend_silence_threshold;
-    
-    console.log('🔊 Loaded configuration from backend:', config);
-    return config;
-  } catch (error) {
-    console.error('🔊 Failed to load configuration:', error);
-    // Use defaults if config loading fails
-    return null;
-  }
-}
-
-// TTS functions
-async function playTTSAudio(text) {
-  if (!isTTSEnabled || !text || !text.trim()) {
-    return;
-  }
-
-  try {
-    updateStatus("Generating speech...");
-    
-    const response = await fetch('/tts/synthesize', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        text: text,
-        // Voice is now set by backend config
-      }),
-    });
-
-    const data = await response.json();
-    
-    if (data.audio) {
-      // Decode base64 audio and play
-      const audioBytes = atob(data.audio);
-      const audioArray = new Uint8Array(audioBytes.length);
-      for (let i = 0; i < audioBytes.length; i++) {
-        audioArray[i] = audioBytes.charCodeAt(i);
-      }
-      
-      // Create audio context and play
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      const audioBuffer = await audioContext.decodeAudioData(audioArray.buffer);
-      
-      const source = audioContext.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(audioContext.destination);
-      
-      source.onended = () => {
-        updateStatus("Listening...");
-      };
-      
-      source.start(0);
-      updateStatus("Playing speech...");
-      console.log('TTS audio playing');
-    } else {
-      console.error('TTS synthesis failed:', data.error);
-      updateStatus("TTS failed");
+function addMessage(text, sender, isRecording = false) {
+    if (CONFIG.ENABLE_DEBUG_BUBBLE_LOGS) {
+        console.log('🫧 Creating message bubble:', text, sender, isRecording);
     }
-  } catch (error) {
-    console.error('TTS playback error:', error);
-    updateStatus("TTS error");
-  }
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${sender}`;
+    
+    if (isRecording) {
+        messageDiv.classList.add('recording');
+        messageDiv.innerHTML = text + '<span class="processing-indicator"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>';
+    } else {
+        messageDiv.textContent = text;
+    }
+    
+    messagesEl.appendChild(messageDiv);
+    
+    // Force auto-scroll with multiple methods
+    setTimeout(() => {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        
+        // Fallback method
+        messagesEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        
+        // Another fallback
+        messageDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }, 100);
+    
+    if (CONFIG.ENABLE_DEBUG_BUBBLE_LOGS) {
+        console.log('✅ Message bubble added to DOM');
+    }
+    
+    return messageDiv;
+}
+
+function loadSettings() {
+    const savedTTS = localStorage.getItem('ttsEnabled');
+    
+    if (savedTTS !== null) {
+        ttsEnabled = savedTTS === 'true';
+        ttsToggle.checked = ttsEnabled;
+    }
+}
+
+function saveSettings() {
+    localStorage.setItem('ttsEnabled', ttsEnabled);
 }
 
 function toggleTTS() {
-  isTTSEnabled = !isTTSEnabled;
-  console.log('TTS enabled:', isTTSEnabled);
-  updateTTSButton();
-  return isTTSEnabled;
+    ttsEnabled = ttsToggle.checked;
+    saveSettings();
 }
 
-function updateTTSButton() {
-  const toggleTTSBtn = document.getElementById('toggleTTS');
-  if (toggleTTSBtn) {
-    toggleTTSBtn.textContent = isTTSEnabled ? '🔊 TTS ON' : '🔇 TTS OFF';
-    toggleTTSBtn.style.background = isTTSEnabled ? '#17a2b8' : '#6c757d';
-  }
+function clearConversation() {
+    messagesEl.innerHTML = '';
+    currentText = '';
+    messageBubble = null;
+    conversationHistory = []; // Clear memory
+    console.log('🗑️ Conversation and memory cleared');
 }
 
-async function getLLMResponse(userMessage) {
-  try {
-    updateStatus("Thinking...");
-    
-    const response = await fetch('/llm/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message: userMessage,
-        conversation_id: currentConversationId
-      }),
-    });
-
-    const data = await response.json();
-    
-    if (data.response) {
-      updateStatus("Ready");
-      return data.response;
-    } else {
-      updateStatus("LLM error");
-      return "I apologize, but I'm having trouble processing that right now.";
-    }
-  } catch (error) {
-    console.error('LLM error:', error);
-    updateStatus("LLM error");
-    return "I apologize, but I'm having trouble connecting right now. Please try again.";
-  }
+function checkWebKitSupport() {
+    return 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
 }
 
-// Audio streaming queue
-let audioQueue = [];
-let isPlayingAudio = false;
-let currentAIMessage = null;
-
-async function getStreamingAIResponse(userMessage) {
-  try {
-    updateStatus("Thinking...");
+function startListening() {
+    if (isListening) return;
     
-    // Connect to streaming WebSocket
-    const ws = new WebSocket('ws://localhost:8000/ws/stream');
-    
-    ws.onopen = () => {
-      console.log('🎵 Streaming TTS WebSocket connected');
-      // Send user message
-      ws.send(JSON.stringify({ message: userMessage }));
-    };
-    
-    ws.onmessage = async (event) => {
-      const data = JSON.parse(event.data);
-      
-      if (data.type === 'audio') {
-        // Create or update AI message
-        if (!currentAIMessage) {
-          // First sentence - create new message
-          currentAIMessage = addMessage(data.text, "assistant");
-        } else {
-          // Subsequent sentences - append to existing message
-          currentAIMessage.textContent += data.text;
-        }
-        
-        // Add audio to queue
-        audioQueue.push(data.audio);
-        
-        // Start playing if not already playing
-        if (!isPlayingAudio) {
-          playAudioQueue();
-        }
-        
-        updateStatus("Speaking...");
-        
-      } else if (data.type === 'end') {
-        // Streaming complete - reset current message
-        currentAIMessage = null;
-        updateStatus("Ready");
-        ws.close();
-      }
-    };
-    
-    ws.onerror = (error) => {
-      console.error('🎵 Streaming WebSocket error:', error);
-      updateStatus("Streaming error");
-      currentAIMessage = null;
-      ws.close();
-    };
-    
-  } catch (error) {
-    console.error('🎵 Streaming AI response error:', error);
-    updateStatus("Streaming error");
-    currentAIMessage = null;
-  }
-}
-
-async function playAudioQueue() {
-  if (audioQueue.length === 0) {
-    isPlayingAudio = false;
-    return;
-  }
-  
-  isPlayingAudio = true;
-  
-  while (audioQueue.length > 0) {
-    const audioBase64 = audioQueue.shift();
-    await playAudioFromBase64(audioBase64);
-  }
-  
-  isPlayingAudio = false;
-}
-
-async function playAudioFromBase64(audioBase64) {
-  try {
-    // Decode base64 to binary
-    const binaryString = atob(audioBase64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
+    if (!checkWebKitSupport()) {
+        updateStatus('Speech recognition not supported');
+        addMessage('Speech recognition is not supported in this browser. Please use Chrome or Safari.', 'assistant');
+        return;
     }
     
-    // Create audio blob and play
-    const audioBlob = new Blob([bytes], { type: 'audio/wav' });
-    const audioUrl = URL.createObjectURL(audioBlob);
-    const audio = new Audio(audioUrl);
+    isListening = true;
+    currentText = "";
     
-    // Wait for audio to finish playing
-    await new Promise((resolve) => {
-      audio.onended = resolve;
-      audio.play();
-    });
-    
-    // Clean up
-    URL.revokeObjectURL(audioUrl);
-    
-  } catch (error) {
-    console.error('🎵 Audio playback error:', error);
-  }
-}
-
-async function getAIResponse(userMessage) {
-  // Add "thinking" indicator
-  const thinkingMsg = addMessage("", "assistant", true);
-  thinkingMsg.classList.add('recording');
-  
-  try {
-    // Get real LLM response
-    const aiResponse = await getLLMResponse(userMessage);
-    
-    // Update the thinking message with real response
-    finishProcessing(aiResponse);
-    
-    // Reset state for next turn after successful LLM response
-    currentUserMessage = "";
-    isProcessing = false;
-    processingMessageEl = null;
-    
-    // Play TTS if enabled
-    if (isTTSEnabled) {
-      await playTTSAudio(aiResponse);
-    }
-    
-  } catch (error) {
-    console.error('🤖 AI response error:', error);
-    finishProcessing("I apologize, but I'm having trouble processing that right now. Please try again.");
-  }
-}
-
-async function startStreaming() {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    updateStatus("Already streaming.");
-    return;
-  }
-
-  // Clear any lingering state to prevent message reuse
-  currentUserMessage = "";
-  isProcessing = false;
-  processingMessageEl = null;
-  currentAIMessage = null;
-
-  try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch (err) {
-    console.error("Microphone permission denied", err);
-    updateStatus("Microphone permission denied.");
-    return;
-  }
-
-  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${protocol}://${window.location.host}/ws`);
-  ws.binaryType = "arraybuffer";
-
-  ws.onopen = () => {
-    updateStatus("Listening...");
-    recordingIndicator.style.display = "inline";
-    stopBtn.disabled = false;
     startBtn.disabled = true;
-
-    // Reset current message state but keep conversation history
-    currentUserMessage = "";
-    isProcessing = false;
-    processingMessageEl = null;
-
-    // Start frontend silence detection (monitoring mode)
-    resetFrontendSilenceTimer();
-
-    // Create Web Audio context to capture raw PCM
-    const audioContext = new AudioContext({ sampleRate: CONFIG.SAMPLE_RATE });
-    const source = audioContext.createMediaStreamSource(mediaStream);
-    const processor = audioContext.createScriptProcessor(CONFIG.FRAME_SIZE, CONFIG.CHANNELS, CONFIG.CHANNELS);
-
-    processor.onaudioprocess = (event) => {
-      if (ws?.readyState === WebSocket.OPEN) {
-        const inputBuffer = event.inputBuffer.getChannelData(0);
-        // Compute RMS to detect audio level
-        let sum = 0;
-        for (let i = 0; i < inputBuffer.length; i++) {
-          sum += inputBuffer[i] * inputBuffer[i];
-        }
-        const rms = Math.sqrt(sum / inputBuffer.length);
-        
-        // Convert audio chunk to PCM for buffering
-        const pcm = new Int16Array(inputBuffer.length);
-        for (let i = 0; i < inputBuffer.length; i++) {
-          pcm[i] = Math.max(-32768, Math.min(32767, inputBuffer[i] * 32768));
-        }
-        
-        // Check for speech vs silence
-        if (rms > CONFIG.SILENCE_THRESHOLD) {
-          // Speech detected
-          
-          // If not already in speech session, start one (with debounce to prevent false triggers)
-          if (!isSpeechActive) {
-            // Require sustained speech to start a session (prevent false triggers)
-            setTimeout(() => {
-              if (!isSpeechActive && rms > CONFIG.SILENCE_THRESHOLD) {
-                startSpeechSession(preBuffer);
-              }
-            }, CONFIG.SPEECH_DEBOUNCE_MS); // 50ms debounce for faster response
-          } else {
-            // Already in speech session - reset silence timer and send audio
-            resetFrontendSilenceTimer();
-            
-            // Only send if audio level is above threshold
-            if (rms > CONFIG.RMS_THRESHOLD) {
-              ws.send(pcm.buffer);
-            }
-          }
-        }
-        
-        // Always maintain pre-buffer (even in silence)
-        if (rms > CONFIG.RMS_THRESHOLD) {
-          preBuffer.push(pcm.buffer);
-          if (preBuffer.length > PRE_BUFFER_SIZE) {
-            preBuffer.shift(); // Remove oldest chunk
-          }
-        }
-      }
+    stopBtn.disabled = false;
+    updateStatus('Listening...');
+    
+    // Create bubble immediately when button is clicked
+    messageBubble = addMessage('', 'user', true);
+    
+    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = CONFIG.SPEECH_RECOGNITION_LANG;
+    
+    recognition.onstart = () => {
+        if (CONFIG.ENABLE_CONSOLE_LOGS) console.log('🎤 Recognition started');
     };
-
-function startSpeechSession(buffer = []) {
-  if (!isSpeechActive) {
-    isSpeechActive = true;
-    updateStatus("Transcribing...");
-    addMessage("", "user", true);
-    processingMessageEl = messagesEl.querySelector(".message.user:last-of-type");
-    processingMessageEl.classList.add('recording');
-    isProcessing = true;
     
-    // Send pre-buffer first to capture first words
-    buffer.forEach(chunk => {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(chunk);
-      }
-    });
+    recognition.onresult = (event) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+        
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                finalTranscript += transcript;
+            } else {
+                interimTranscript += transcript;
+            }
+        }
+        
+        if (finalTranscript) {
+            handleSpeech(finalTranscript, true);
+        } else if (interimTranscript) {
+            handleSpeech(interimTranscript, false);
+        }
+    };
     
-    resetFrontendSilenceTimer();
-    console.log("Speech session started");
+    recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        updateStatus(`Error: ${event.error}`);
+        stopListening();
+    };
     
-    // Clear pre-buffer after use
-    preBuffer = [];
-  }
+    recognition.onend = () => {
+        if (isListening) {
+            setTimeout(() => recognition.start(), 100);
+        }
+    };
+    
+    recognition.start();
+    window.currentRecognition = recognition;
 }
 
-    source.connect(processor);
-    processor.connect(audioContext.destination);
-    // Keep references to stop later
-    window._audioCtx = audioContext;
-    window._processor = processor;
-    window._source = source;
-  };
-
-  ws.onmessage = (event) => {
-    const msg = event.data;
-    console.log("Server:", msg);
-    
-    // Handle control/status messages
-    if (msg.match(/^(Received|Stopping|Transcribing|Transcription)/)) {
-      return;
+function handleSpeech(text, isFinal) {
+    if (silenceTimer) {
+        clearTimeout(silenceTimer);
+        silenceTimer = null;
     }
     
-    // Handle partial results for real-time feedback
-    if (msg.startsWith("[PARTIAL]")) {
-      const partialText = msg.replace("[PARTIAL] ", "").trim();
-      if (partialText && isProcessing && processingMessageEl) {
-        // Show partial text with different styling for real-time feedback
-        processingMessageEl.innerHTML = partialText + '<span class="processing-indicator"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>';
-        processingMessageEl.classList.add('partial');
-      }
-      return;
+    // Create new bubble immediately for subsequent messages
+    if (!messageBubble) {
+        messageBubble = addMessage('', 'user', true);
     }
     
-    // Handle final transcription results
-    if (msg) {
-      // Update the existing processing message
-      currentUserMessage += (currentUserMessage ? " " : "") + msg;
-      
-      if (isProcessing && processingMessageEl) {
-        // Update with final text (remove partial styling)
-        processingMessageEl.classList.remove('partial');
-        updateProcessingMessage(currentUserMessage);
-      }
+    if (isFinal) {
+        currentText += (currentText ? ' ' : '') + text.trim();
+        
+        // Check message length
+        if (currentText.length > CONFIG.MAX_MESSAGE_LENGTH) {
+            currentText = currentText.substring(0, CONFIG.MAX_MESSAGE_LENGTH);
+            updateBubble(currentText + '... (truncated)');
+        } else {
+            updateBubble(currentText);
+        }
+        
+        silenceTimer = setTimeout(() => {
+            sendToAI();
+        }, CONFIG.SILENCE_TIMEOUT_MS);
+    } else {
+        if (messageBubble) {
+            const displayText = currentText + ' ' + text.replace('[PARTIAL] ', '').trim();
+            
+            // Check interim text length
+            if (displayText.length > CONFIG.MAX_MESSAGE_LENGTH) {
+                updateBubble(displayText.substring(0, CONFIG.MAX_MESSAGE_LENGTH) + '...');
+            } else {
+                updateBubble(displayText);
+            }
+        }
     }
-  };
-
-  ws.onerror = (event) => {
-    console.error("WebSocket error", event);
-    updateStatus("WebSocket error.");
-  };
-
-  ws.onclose = () => {
-    updateStatus("Connection closed.");
-    recordingIndicator.style.display = "none";
-    stopFrontendSilenceTimer();
-    // Finish any ongoing processing
-    if (isProcessing && currentUserMessage) {
-      finishProcessing(currentUserMessage);
-    }
-    cleanup();
-  };
 }
 
-function cleanup() {
-  if (window._processor) {
-    window._processor.disconnect();
-    window._processor = null;
-  }
-  if (window._source) {
-    window._source.disconnect();
-    window._source = null;
-  }
-  if (window._audioCtx) {
-    window._audioCtx.close();
-    window._audioCtx = null;
-  }
-  if (mediaStream) {
-    mediaStream.getTracks().forEach(track => track.stop());
-    mediaStream = null;
-  }
-
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send("STOP");
-    ws.close();
-  }
-  ws = null;
-
-  startBtn.disabled = false;
-  stopBtn.disabled = true;
+function updateBubble(text) {
+    if (messageBubble) {
+        messageBubble.innerHTML = text + '<span class="processing-indicator"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>';
+        
+        // Force auto-scroll during bubble updates
+        setTimeout(() => {
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+            messageBubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }, 50);
+    }
 }
 
-startBtn.addEventListener("click", startStreaming);
-stopBtn.addEventListener("click", () => {
-  updateStatus("Stopping...");
-  recordingIndicator.style.display = "none";
-  stopFrontendSilenceTimer();
-  
-  // Finish any ongoing processing
-  if (isProcessing && currentUserMessage) {
-    finishProcessing(currentUserMessage);
+async function sendToAI() {
+    if (!currentText.trim()) return;
     
-    // If there's a user message, trigger LLM response immediately
-    if (currentUserMessage.trim()) {
-      setTimeout(() => {
-        getAIResponse(currentUserMessage);
-      }, 500); // Small delay to show final transcription
+    updateStatus('Processing...');
+    
+    if (messageBubble) {
+        messageBubble.innerHTML = currentText;
+        messageBubble.classList.remove('recording');
     }
-  }
-  
-  cleanup();
-});
-
-// Initialize app on page load
-window.addEventListener('load', async () => {
-  // Load configuration from backend first
-  await loadConfig();
-  setupSidebarControls();
-  setupTTSControls();
-  console.log('AI Companion initialized with sidebar and TTS');
-});
-
-function setupTTSControls() {
-  const toggleTTSBtn = document.getElementById('toggleTTS');
-  
-  // Set initial TTS state from config
-  isTTSEnabled = CONFIG.TTS_ENABLED;
-  updateTTSButton();
-  
-  // Add click handler for TTS toggle
-  toggleTTSBtn.addEventListener('click', toggleTTS);
-  
-  console.log('TTS controls initialized');
+    
+    try {
+        const response = await fetch('/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message: currentText,
+                conversation_history: conversationHistory, // Send memory to backend
+                tts: ttsEnabled
+            })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            
+            // Add user message to memory
+            conversationHistory.push({"role": "user", "content": currentText});
+            
+            // Add AI response to memory
+            conversationHistory.push({"role": "assistant", "content": data.response});
+            
+            // Keep only last 10 messages to avoid context limit
+            if (conversationHistory.length > 20) { // 10 user + 10 assistant
+                conversationHistory = conversationHistory.slice(-20);
+            }
+            
+            addMessage(data.response, 'assistant');
+            
+            if (ttsEnabled && data.audio) {
+                if (CONFIG.ENABLE_CONSOLE_LOGS) console.log('🔊 Playing TTS audio');
+            }
+            
+            updateStatus('Ready');
+        } else {
+            addMessage('Sorry, I had trouble processing that. Please try again.', 'assistant');
+            updateStatus('Error');
+        }
+    } catch (error) {
+        addMessage('Sorry, I\'m having connection issues. Please try again.', 'assistant');
+        updateStatus('Connection Error');
+    }
+    
+    currentText = '';
+    messageBubble = null;
+    silenceTimer = null;
 }
 
-function setupSidebarControls() {
-  // Add event listeners for sidebar
-  sidebarToggleBtn.addEventListener('click', toggleSidebar);
-  toggleSidebarBtn.addEventListener('click', toggleSidebar);
-  newChatBtn.addEventListener('click', createNewConversation);
-  
-  // Initialize with a new conversation
-  createNewConversation();
-  
-  console.log('Sidebar controls initialized');
+function stopListening() {
+    if (!isListening) return;
+    
+    isListening = false;
+    
+    if (silenceTimer) {
+        clearTimeout(silenceTimer);
+        silenceTimer = null;
+    }
+    
+    if (window.currentRecognition) {
+        window.currentRecognition.stop();
+        window.currentRecognition = null;
+    }
+    
+    if (currentText.trim()) {
+        sendToAI();
+    }
+    
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    updateStatus('Ready');
+    
+    if (messageBubble) {
+        messageBubble.classList.remove('recording');
+    }
+    
+    if (CONFIG.ENABLE_CONSOLE_LOGS) console.log('🛑 Speech recognition stopped');
 }
+
+console.log('📱 AI Companion script with sidebar loaded');
