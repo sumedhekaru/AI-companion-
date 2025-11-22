@@ -227,14 +227,19 @@ class KokoroTTSProcessor:
         except Exception as e:
             logger.error(f"🔊 Kokoro TTS streaming failed: {e}")
 
-# Global TTS processor instance
+# Global TTS processor instance (will be set from main.py)
 _tts_processor: Optional[KokoroTTSProcessor] = None
 
+def set_tts_processor(processor: KokoroTTSProcessor):
+    """Set the global TTS processor instance (called from main.py startup)."""
+    global _tts_processor
+    _tts_processor = processor
+
 def get_tts_processor() -> KokoroTTSProcessor:
-    """Get or create the global TTS processor instance."""
+    """Get the global TTS processor instance."""
     global _tts_processor
     if _tts_processor is None:
-        _tts_processor = KokoroTTSProcessor()
+        raise RuntimeError("TTS processor not initialized. Call set_tts_processor() first.")
     return _tts_processor
 
 async def synthesize_speech(text: str) -> Optional[bytes]:

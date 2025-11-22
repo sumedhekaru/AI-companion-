@@ -42,6 +42,23 @@ app.add_middleware(
 # Store streaming sessions
 active_streams: Dict[str, Dict[str, Any]] = {}
 
+# Global TTS processor instance
+tts_processor = None
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize TTS model on startup to avoid first-request delays."""
+    global tts_processor
+    try:
+        logger.info("🎵 Preloading TTS model on startup...")
+        from tts import KokoroTTSProcessor, set_tts_processor
+        tts_processor = KokoroTTSProcessor()
+        set_tts_processor(tts_processor)  # Set global instance for tts.py
+        logger.info("✅ TTS model preloaded successfully!")
+    except Exception as e:
+        logger.error(f"❌ Failed to preload TTS model: {e}")
+        tts_processor = None
+
 @app.post("/chat")
 async def chat_endpoint(request: dict):
     """Process chat message and return audio chunks."""
@@ -308,4 +325,4 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main_sse:app", host="0.0.0.0", port=8001, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
