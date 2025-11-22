@@ -87,7 +87,9 @@ function handleSSEMessage(data) {
             }
             
             aiCurrentText = data.content;
-            aiMessageBubble.querySelector('.message-text').textContent = aiCurrentText;
+            // Use marked.parse for AI responses to render Markdown
+            const textElement = aiMessageBubble.querySelector('.message-text');
+            textElement.innerHTML = marked.parse(aiCurrentText);
             messagesEl.scrollTop = messagesEl.scrollHeight;
             
             if (CONFIG.ENABLE_CONSOLE_LOGS) {
@@ -138,7 +140,13 @@ function addMessage(text, sender, isRecording = false) {
     
     const textDiv = document.createElement('div');
     textDiv.className = 'message-text';
-    textDiv.textContent = text;
+    
+    // Use Markdown for AI responses, plain text for user messages
+    if (sender === 'assistant') {
+        textDiv.innerHTML = marked.parse(text);
+    } else {
+        textDiv.textContent = text; // Security: Use textContent for user input
+    }
     
     contentDiv.appendChild(textDiv);
     
