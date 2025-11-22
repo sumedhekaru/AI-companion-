@@ -16,12 +16,13 @@ logger = logging.getLogger(__name__)
 
 class VoskStreamingTranscriber:
     """
-    Ultra-low latency streaming transcriber using Vosk.
-    ~200ms latency for real-time streaming.
+    Real-time speech-to-text using Vosk with WebSocket streaming.
     """
-    def __init__(self, cfg: SpeechToTextConfig = None):
-        self.cfg = cfg or SpeechToTextConfig()
-        self.model_path = Path(__file__).parent / "models" / "vosk-model-small-en-us-0.15"
+    
+    def __init__(self, config: SpeechToTextConfig = None):
+        """Initialize Vosk streaming transcriber."""
+        self.config = config or SpeechToTextConfig()
+        self.model_path = self.config.model_path
         self.model = None
         self.recognizer = None
         self.result_queue: asyncio.Queue[str] = asyncio.Queue()
@@ -32,7 +33,7 @@ class VoskStreamingTranscriber:
         """Initialize Vosk model and recognizer"""
         try:
             if not self.model_path.exists():
-                logger.info(f"🔊 Downloading Vosk model to {self.model_path}")
+                logger.info(f"🔊 Downloading Vosk model {self.config.model_name} to {self.model_path}")
                 self.model_path.parent.mkdir(exist_ok=True)
                 # Download model - this is a placeholder
                 # In practice, download from: https://alphacephei.com/vosk/models
@@ -41,7 +42,7 @@ class VoskStreamingTranscriber:
             
             self.model = vosk.Model(str(self.model_path))
             self.recognizer = vosk.KaldiRecognizer(self.model, 16000)
-            logger.info("🔊 Vosk model loaded successfully")
+            logger.info(f"🔊 Vosk model loaded successfully: {self.config.model_name}")
         except Exception as e:
             logger.error(f"🔊 Failed to load Vosk model: {e}")
     

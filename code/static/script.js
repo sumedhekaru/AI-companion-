@@ -3,11 +3,11 @@ const CONFIG = {
   SAMPLE_RATE: 16000,
   CHANNELS: 1,
   FRAME_SIZE: 1024, // Reduced from 4096 for faster processing
-  RMS_THRESHOLD: 0, // Temporarily disable to debug
+  RMS_THRESHOLD: 0.02, // Will be updated from config
   
   // Silence detection for DONE signal
   SILENCE_THRESHOLD: 0.01,  // RMS threshold below which audio is considered "silent"
-  SILENCE_TIMEOUT_MS: 5000, // Time in milliseconds of silence before sending DONE signal
+  SILENCE_TIMEOUT_MS: 3000, // Time in milliseconds of silence before sending DONE signal (will be updated from config)
   
   // Latency optimizations
   SPEECH_DEBOUNCE_MS: 50, // Reduced from 200ms for faster speech detection
@@ -195,6 +195,11 @@ function sendDoneSignal() {
         // Trigger LLM response
         setTimeout(() => {
           getStreamingAIResponse(currentUserMessage);
+          
+          // Reset state for next turn after triggering streaming
+          currentUserMessage = "";
+          isProcessing = false;
+          processingMessageEl = null;
         }, 500);
         
         // Don't reset state yet - wait until after LLM response
@@ -221,6 +226,11 @@ async function loadConfig() {
     CONFIG.TTS_SPEED = config.tts.speed;
     CONFIG.TTS_ENABLED = config.tts.enabled;
     availableVoices = config.tts.available_voices;
+    
+    // Update STT configuration from backend
+    CONFIG.SILENCE_TIMEOUT_MS = config.stt.frontend_silence_timeout_ms;
+    CONFIG.RMS_THRESHOLD = config.stt.frontend_rms_threshold;
+    CONFIG.SILENCE_THRESHOLD = config.stt.frontend_silence_threshold;
     
     console.log('🔊 Loaded configuration from backend:', config);
     return config;
@@ -472,6 +482,12 @@ async function startStreaming() {
     updateStatus("Already streaming.");
     return;
   }
+
+  // Clear any lingering state to prevent message reuse
+  currentUserMessage = "";
+  isProcessing = false;
+  processingMessageEl = null;
+  currentAIMessage = null;
 
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });

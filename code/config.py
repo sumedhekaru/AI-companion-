@@ -13,10 +13,18 @@ class SpeechToTextConfig:
     channels: int = 1  # Mono
     frame_size: int = 1024  # Reduced from 4096 for ~64ms chunks instead of ~256ms
 
+    # Vosk model settings
+    # Available models:
+    # - "vosk-model-small-en-us-0.15" (40MB, faster, less accurate)
+    # - "vosk-model-en-us-0.42" (1.4GB, balanced, good accuracy)  
+    # - "vosk-model-large-en-us-0.22" (1.8GB, slower, best accuracy)
+    model_name: str = "vosk-model-small-en-in-0.4"
+    model_path: Path = Path(__file__).parent / "models" / model_name
+
     # Frontend audio level filter (RMS threshold)
     # Only send audio to backend if RMS > this value. Helps filter background noise.
     # Typical range: 0.005–0.02. Lower values capture quieter speech but may let in noise.
-    frontend_rms_threshold: float = 0.1
+    frontend_rms_threshold: float = 0.02
 
     # Frontend silence detection for triggering DONE signal
     # RMS threshold below which audio is considered "silent"
@@ -25,7 +33,7 @@ class SpeechToTextConfig:
     
     # Time in milliseconds of silence before sending DONE signal
     # Typical range: 3000–7000ms. We'll experiment to find optimal timing.
-    frontend_silence_timeout_ms: int = 5000
+    frontend_silence_timeout_ms: int = 3000
 
     # Temporary files directory
     recordings_dir: Path = Path(__file__).parent / "recordings"
