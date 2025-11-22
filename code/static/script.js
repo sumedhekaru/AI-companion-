@@ -144,6 +144,14 @@ function startListening() {
         
         for (let i = event.resultIndex; i < event.results.length; i++) {
             const transcript = event.results[i][0].transcript;
+            
+            // Filter out low-confidence results (likely background noise/AI audio)
+            const confidence = event.results[i][0].confidence;
+            if (confidence < 0.7) {
+                if (CONFIG.ENABLE_CONSOLE_LOGS) console.log('🔇 Low confidence audio filtered out:', confidence);
+                continue;
+            }
+            
             if (event.results[i].isFinal) {
                 finalTranscript += transcript;
             } else {

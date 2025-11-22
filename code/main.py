@@ -351,6 +351,10 @@ async def process_text_queue_for_tts(text_queue: asyncio.Queue):
             
             # Sequential synthesis - process immediately as it arrives
             print(f"🎵 SYNTHESIZING: '{text_chunk}'")
+            
+            # Add small delay to prevent TTS engine overload
+            await asyncio.sleep(0.1)
+            
             audio_base64 = await synthesize_chunk(processor, text_chunk, len(audio_chunks))
             
             if audio_base64:
@@ -385,7 +389,12 @@ async def process_text_queue_for_tts(text_queue: asyncio.Queue):
 async def synthesize_chunk(processor, text: str, chunk_index: int):
     """Synthesize a single text chunk sequentially."""
     try:
-        logger.info(f"🎵 Synthesizing chunk {chunk_index + 1}: '{text}'")
+        logger.info(f"🎵 Synthesizing chunk {chunk_index + 1}: '{text[:50]}...'")
+        
+        # Check text length - very long text might cause issues
+        if len(text) > 300:
+            logger.warning(f"🎵 Chunk {chunk_index + 1} text is long ({len(text)} chars), may cause issues")
+        
         audio_bytes = await processor.synthesize_async(text)
         
         if audio_bytes:
@@ -393,11 +402,12 @@ async def synthesize_chunk(processor, text: str, chunk_index: int):
             logger.info(f"🎵 ✅ Chunk {chunk_index + 1} synthesized: {len(audio_bytes)} bytes")
             return audio_base64
         else:
-            logger.warning(f"🎵 ❌ Chunk {chunk_index + 1}: No audio generated")
+            logger.warning(f"🎵 ❌ Chunk {chunk_index + 1}: No audio generated - TTS returned None")
             return None
             
     except Exception as e:
         logger.error(f"🎵 ❌ Chunk {chunk_index + 1} synthesis error: {e}")
+        logger.error(f"🎵 ❌ Error details - text length: {len(text)}, text preview: '{text[:50]}...'")
         return None
 
 # Session management for WebSocket connections

@@ -28,7 +28,7 @@ body {
     padding: 0;
     overflow-y: auto;
     order: 1;
-    display: flex;
+    display: none; /* Hidden for now */
     flex-direction: column;
     min-height: 100vh;
 }
