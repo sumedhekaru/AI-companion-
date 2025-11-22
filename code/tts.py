@@ -71,46 +71,6 @@ class KokoroTTSProcessor:
         """Callback when audio stream stops."""
         self.finished_event.set()
     
-    def _clean_text_for_tts(self, text: str) -> str:
-        """
-        Clean text for better TTS pronunciation by handling special characters.
-        
-        Args:
-            text: Raw text to clean
-            
-        Returns:
-            Cleaned text suitable for TTS synthesis
-        """
-        import re
-        
-        # Remove or replace problematic characters
-        # Remove asterisks, hashtags, at signs, etc.
-        text = re.sub(r'[*#@$%&+=<>~`|^]', '', text)
-        
-        # Replace multiple spaces with single space
-        text = re.sub(r'\s+', ' ', text)
-        
-        # Handle common abbreviations and symbols
-        replacements = {
-            '&': 'and',
-            '%': 'percent',
-            '$': 'dollar',
-            '€': 'euro',
-            '£': 'pound',
-            '¥': 'yen',
-            '©': 'copyright',
-            '®': 'registered',
-            '™': 'trademark',
-        }
-        
-        for symbol, word in replacements.items():
-            text = text.replace(symbol, f' {word} ')
-        
-        # Clean up extra spaces
-        text = re.sub(r'\s+', ' ', text).strip()
-        
-        return text
-    
     def synthesize(self, text: str) -> Optional[bytes]:
         """
         Synthesize speech synchronously and return audio bytes.
@@ -197,37 +157,7 @@ class KokoroTTSProcessor:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self.synthesize, text)
     
-    def synthesize_stream(self, text: str):
-        """
-        Generator that yields audio chunks for streaming.
-        
-        Args:
-            text: Text to synthesize
-            
-        Yields:
-            Audio chunks as bytes
-        """
-        if not self.stream:
-            logger.error("🔊 TTS stream not initialized")
-            return
-        
-        if not text or not text.strip():
-            logger.warning("🔊 Empty text provided for TTS")
-            return
-        
-        try:
-            self.stream.feed(text)
-            
-            for chunk in self.stream.stream():
-                if chunk is not None:
-                    # Convert float32 chunk to int16 bytes
-                    chunk_int16 = (chunk * 32767).astype(np.int16)
-                    yield chunk_int16.tobytes()
-                    
-        except Exception as e:
-            logger.error(f"🔊 Kokoro TTS streaming failed: {e}")
-
-# Global TTS processor instance (will be set from main.py)
+    # Global TTS processor instance (will be set from main.py)
 _tts_processor: Optional[KokoroTTSProcessor] = None
 
 def set_tts_processor(processor: KokoroTTSProcessor):

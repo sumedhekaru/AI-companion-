@@ -372,53 +372,6 @@ async function playNextAudioChunk() {
     }
 }
 
-// Play audio chunks (legacy function - kept for compatibility)
-async function playAudioChunks(audioChunks) {
-    if (!ttsEnabled) return;
-    
-    isAISpeaking = true;
-    updateStatus('AI Speaking...');
-    
-    try {
-        for (let i = 0; i < audioChunks.length; i++) {
-            const chunk = audioChunks[i];
-            
-            // Convert base64 to audio
-            const audioBytes = Uint8Array.from(atob(chunk), c => c.charCodeAt(0));
-            const audioBlob = new Blob([audioBytes], { type: 'audio/wav' });
-            const audioUrl = URL.createObjectURL(audioBlob);
-            
-            const audio = new Audio(audioUrl);
-            
-            await new Promise((resolve, reject) => {
-                audio.onended = () => {
-                    URL.revokeObjectURL(audioUrl);
-                    resolve();
-                };
-                
-                audio.onerror = (error) => {
-                    console.error('🎵 Audio playback error:', error);
-                    URL.revokeObjectURL(audioUrl);
-                    reject(error);
-                };
-                
-                audio.play().catch(reject);
-            });
-            
-            if (CONFIG.ENABLE_CONSOLE_LOGS) {
-                console.log(`🎵 Played audio chunk ${i + 1}/${audioChunks.length}`);
-            }
-        }
-        
-    } catch (error) {
-        console.error('🎵 Audio playback error:', error);
-    } finally {
-        isAISpeaking = false;
-        updateStatus('Ready');
-    }
-}
-
-// Start listening
 function startListening() {
     if (!recognition) {
         console.error('🎤 Speech recognition not available');
@@ -435,7 +388,7 @@ function startListening() {
     recognition.start();
     updateStatus('Listening...');
     
-    if (CONFIG.ENABLE_CONSOLE_LOGS) console.log('🎤 Started listening');
+    if (CONFIG.ENABLE_CONSOLE_LOGS) console.log('� Started listening');
 }
 
 // Stop listening
