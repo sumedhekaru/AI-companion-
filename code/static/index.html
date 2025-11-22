@@ -3,66 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Companion</title>
+    <title>AI Companion - RealtimeTTS Edition</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <div class="app-container">
-        <aside class="sidebar">
-            <div class="sidebar-header">
-                <button id="newChatBtn" class="btn btn-new-chat">+ New chat</button>
+        <div class="chat-container">
+            <div class="chat-header">
+                <h1>AI Companion</h1>
+                <div class="controls">
+                    <button id="ttsToggle" class="toggle-btn active">🔊 TTS On</button>
+                    <button id="clearBtn" class="clear-btn">🗑️ Clear</button>
+                </div>
             </div>
             
-            <div class="sidebar-content">
-                <div class="conversation-history">
-                    <h3>Today</h3>
-                    <div class="chat-item active">
-                        <div class="chat-title">Current Conversation</div>
-                        <div class="chat-preview">Hello, how can I help you...</div>
-                    </div>
-                    
-                    <div class="chat-item">
-                        <div class="chat-title">Previous Chat</div>
-                        <div class="chat-preview">Discussion about AI...</div>
-                    </div>
-                    
-                    <div class="chat-item">
-                        <div class="chat-title">Another Topic</div>
-                        <div class="chat-preview">Questions about coding...</div>
-                    </div>
+            <div class="messages-container">
+                <div id="messages" class="messages"></div>
+            </div>
+            
+            <div class="input-container">
+                <div class="status-bar">
+                    <span id="status">Ready</span>
                 </div>
                 
-                <div class="settings-section">
-                    <h3>Settings</h3>
-                    <div class="setting-group">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="ttsToggle" checked>
-                            <span class="slider"></span>
-                        </label>
-                        <span class="setting-label">Text-to-speech</span>
-                    </div>
+                <div class="voice-controls">
+                    <button id="startBtn" class="voice-btn start">🎤 Start Speaking</button>
+                    <button id="stopBtn" class="voice-btn stop" disabled>🛑 Stop</button>
                 </div>
             </div>
-        </aside>
-        
-        <main class="main-content">
-            <header>
-                <h1>AI Companion</h1>
-                <div class="status" id="status">Ready</div>
-            </header>
-            
-            <div class="chat-container">
-                <div class="messages" id="messages"></div>
-            </div>
-            
-            <div class="controls">
-                <button id="startBtn" class="btn btn-primary">Start Speaking</button>
-                <button id="stopBtn" class="btn btn-secondary" disabled>Stop</button>
-                <button id="clearBtn" class="btn btn-clear">Clear</button>
-            </div>
-        </main>
+        </div>
     </div>
-    
-    <script src="/static/script.js"></script>
+
+    <script src="/static/script_sse.js"></script>
 </body>
 </html>

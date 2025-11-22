@@ -36,13 +36,17 @@ class TTSConfig:
     speed = 1.0  # Speech speed multiplier
     
     # Streaming optimization settings
-    fast_sentence_fragment = True  # Enable streaming for faster response
-    minimum_sentence_length = 5    # Start synthesis early
-    minimum_first_fragment_length = 2  # Start with very short fragments
-    comma_silence_duration = 0.1   # Reduced silence for faster flow
-    sentence_silence_duration = 0.2  # Reduced sentence pauses
-    default_silence_duration = 0.1   # Reduced default silence
-    force_first_fragment_after_words = 3  # Force early synthesis
+    fast_sentence_fragment = False  # Disable fragmentation - we use complete sentences
+    minimum_sentence_length = 0     # Not used - we provide complete sentences
+    minimum_first_fragment_length = 0  # Not used - we provide complete sentences
+    comma_silence_duration = 0.3   # More natural pause at commas
+    sentence_silence_duration = 0.5  # More natural pause at sentences
+    default_silence_duration = 0.2   # Slightly longer default pause
+    force_first_fragment_after_words = 0  # Not used - we provide complete sentences
+    
+    # Audio boundary settings to prevent artifacts
+    add_silence_at_end = True  # Add silence to prevent abrupt endings
+    end_silence_duration = 0.1  # 100ms silence at chunk end to prevent clicks
 
 # Global TTS config instance
 tts_config = TTSConfig()

@@ -71,7 +71,47 @@ class KokoroTTSProcessor:
         """Callback when audio stream stops."""
         self.finished_event.set()
     
-    def synthesize_sync(self, text: str) -> Optional[bytes]:
+    def _clean_text_for_tts(self, text: str) -> str:
+        """
+        Clean text for better TTS pronunciation by handling special characters.
+        
+        Args:
+            text: Raw text to clean
+            
+        Returns:
+            Cleaned text suitable for TTS synthesis
+        """
+        import re
+        
+        # Remove or replace problematic characters
+        # Remove asterisks, hashtags, at signs, etc.
+        text = re.sub(r'[*#@$%&+=<>~`|^]', '', text)
+        
+        # Replace multiple spaces with single space
+        text = re.sub(r'\s+', ' ', text)
+        
+        # Handle common abbreviations and symbols
+        replacements = {
+            '&': 'and',
+            '%': 'percent',
+            '$': 'dollar',
+            '€': 'euro',
+            '£': 'pound',
+            '¥': 'yen',
+            '©': 'copyright',
+            '®': 'registered',
+            '™': 'trademark',
+        }
+        
+        for symbol, word in replacements.items():
+            text = text.replace(symbol, f' {word} ')
+        
+        # Clean up extra spaces
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        return text
+    
+    def synthesize(self, text: str) -> Optional[bytes]:
         """
         Synthesize speech synchronously and return audio bytes.
         
@@ -86,8 +126,17 @@ class KokoroTTSProcessor:
             return None
         
         if not text or not text.strip():
-            logger.warning("🔊 Empty text provided for TTS")
+            logger.warning("🔊 Empty text provided for TTS - skipping synthesis")
             return None
+        
+        # Filter out problematic text that causes artifacts
+        text = text.strip()
+        if len(text) < 2:  # Skip very short fragments
+            logger.warning(f"🔊 Text too short for synthesis: '{text}' - skipping")
+            return None
+        
+        # Temporarily disable text cleaning to restore functionality
+        # text = self._clean_text_for_tts(text)
         
         try:
             # Feed text to the stream
@@ -146,7 +195,7 @@ class KokoroTTSProcessor:
         """
         import asyncio
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.synthesize_sync, text)
+        return await loop.run_in_executor(None, self.synthesize, text)
     
     def synthesize_stream(self, text: str):
         """
