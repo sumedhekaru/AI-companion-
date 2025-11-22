@@ -190,18 +190,15 @@ function sendDoneSignal() {
     // Trigger LLM response after a short delay to let backend process
     setTimeout(() => {
       if (currentUserMessage.trim()) {
-        console.log("Triggering LLM response");
         finishProcessing(currentUserMessage);
         
         // Trigger LLM response
         setTimeout(() => {
-          simulateLLMResponse();
+          getStreamingAIResponse(currentUserMessage);
         }, 500);
         
-        // Reset state for next turn
-        currentUserMessage = "";
-        isProcessing = false;
-        processingMessageEl = null;
+        // Don't reset state yet - wait until after LLM response
+        // currentUserMessage will be reset in getAIResponse after successful call
       }
     }, 1500); // Wait 1.5 seconds for backend to process DONE
   }
@@ -292,7 +289,16 @@ async function playTTSAudio(text) {
 function toggleTTS() {
   isTTSEnabled = !isTTSEnabled;
   console.log('TTS enabled:', isTTSEnabled);
+  updateTTSButton();
   return isTTSEnabled;
+}
+
+function updateTTSButton() {
+  const toggleTTSBtn = document.getElementById('toggleTTS');
+  if (toggleTTSBtn) {
+    toggleTTSBtn.textContent = isTTSEnabled ? '🔊 TTS ON' : '🔇 TTS OFF';
+    toggleTTSBtn.style.background = isTTSEnabled ? '#17a2b8' : '#6c757d';
+  }
 }
 
 async function getLLMResponse(userMessage) {
@@ -326,6 +332,113 @@ async function getLLMResponse(userMessage) {
   }
 }
 
+// Audio streaming queue
+let audioQueue = [];
+let isPlayingAudio = false;
+let currentAIMessage = null;
+
+async function getStreamingAIResponse(userMessage) {
+  try {
+    updateStatus("Thinking...");
+    
+    // Connect to streaming WebSocket
+    const ws = new WebSocket('ws://localhost:8000/ws/stream');
+    
+    ws.onopen = () => {
+      console.log('🎵 Streaming TTS WebSocket connected');
+      // Send user message
+      ws.send(JSON.stringify({ message: userMessage }));
+    };
+    
+    ws.onmessage = async (event) => {
+      const data = JSON.parse(event.data);
+      
+      if (data.type === 'audio') {
+        // Create or update AI message
+        if (!currentAIMessage) {
+          // First sentence - create new message
+          currentAIMessage = addMessage(data.text, "assistant");
+        } else {
+          // Subsequent sentences - append to existing message
+          currentAIMessage.textContent += data.text;
+        }
+        
+        // Add audio to queue
+        audioQueue.push(data.audio);
+        
+        // Start playing if not already playing
+        if (!isPlayingAudio) {
+          playAudioQueue();
+        }
+        
+        updateStatus("Speaking...");
+        
+      } else if (data.type === 'end') {
+        // Streaming complete - reset current message
+        currentAIMessage = null;
+        updateStatus("Ready");
+        ws.close();
+      }
+    };
+    
+    ws.onerror = (error) => {
+      console.error('🎵 Streaming WebSocket error:', error);
+      updateStatus("Streaming error");
+      currentAIMessage = null;
+      ws.close();
+    };
+    
+  } catch (error) {
+    console.error('🎵 Streaming AI response error:', error);
+    updateStatus("Streaming error");
+    currentAIMessage = null;
+  }
+}
+
+async function playAudioQueue() {
+  if (audioQueue.length === 0) {
+    isPlayingAudio = false;
+    return;
+  }
+  
+  isPlayingAudio = true;
+  
+  while (audioQueue.length > 0) {
+    const audioBase64 = audioQueue.shift();
+    await playAudioFromBase64(audioBase64);
+  }
+  
+  isPlayingAudio = false;
+}
+
+async function playAudioFromBase64(audioBase64) {
+  try {
+    // Decode base64 to binary
+    const binaryString = atob(audioBase64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    // Create audio blob and play
+    const audioBlob = new Blob([bytes], { type: 'audio/wav' });
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const audio = new Audio(audioUrl);
+    
+    // Wait for audio to finish playing
+    await new Promise((resolve) => {
+      audio.onended = resolve;
+      audio.play();
+    });
+    
+    // Clean up
+    URL.revokeObjectURL(audioUrl);
+    
+  } catch (error) {
+    console.error('🎵 Audio playback error:', error);
+  }
+}
+
 async function getAIResponse(userMessage) {
   // Add "thinking" indicator
   const thinkingMsg = addMessage("", "assistant", true);
@@ -338,13 +451,18 @@ async function getAIResponse(userMessage) {
     // Update the thinking message with real response
     finishProcessing(aiResponse);
     
+    // Reset state for next turn after successful LLM response
+    currentUserMessage = "";
+    isProcessing = false;
+    processingMessageEl = null;
+    
     // Play TTS if enabled
     if (isTTSEnabled) {
       await playTTSAudio(aiResponse);
     }
     
   } catch (error) {
-    console.error('AI response error:', error);
+    console.error('🤖 AI response error:', error);
     finishProcessing("I apologize, but I'm having trouble processing that right now. Please try again.");
   }
 }

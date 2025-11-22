@@ -8,7 +8,7 @@ import logging
 import base64
 import asyncio
 import uuid
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import os
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
@@ -159,6 +159,52 @@ class LLMResponse(BaseModel):
     response: str
     conversation_id: str
 
+
+@app.websocket("/ws/stream")
+async def websocket_stream_tts(websocket: WebSocket):
+    """WebSocket for streaming TTS audio in real-time."""
+    await websocket.accept()
+    logger.info("🎵 Streaming TTS WebSocket connected")
+    
+    try:
+        while True:
+            # Receive user message
+            data = await websocket.receive_text()
+            request = json.loads(data)
+            user_message = request.get("message", "")
+            
+            if not user_message:
+                continue
+            
+            logger.info(f"🎵 Received message for streaming: {user_message[:50]}...")
+            
+            # Get conversation manager and stream response
+            conversation_manager = get_conversation_manager()
+            
+            async for sentence in conversation_manager.get_ai_response_stream(user_message):
+                if sentence.strip():
+                    logger.info(f"🎵 Streaming sentence: {sentence[:30]}...")
+                    
+                    # Synthesize sentence to audio
+                    processor = get_tts_processor()
+                    audio_bytes = await processor.synthesize_async(sentence)
+                    
+                    # Send audio chunk to frontend
+                    audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+                    await websocket.send_text(json.dumps({
+                        "type": "audio",
+                        "text": sentence,
+                        "audio": audio_base64
+                    }))
+            
+            # Send end signal
+            await websocket.send_text(json.dumps({"type": "end"}))
+            
+    except WebSocketDisconnect:
+        logger.info("🎵 Streaming TTS WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"🎵 Streaming TTS error: {e}")
+        await websocket.close()
 
 @app.post("/llm/chat", response_model=LLMResponse)
 async def chat_with_llm(request: LLMRequest):

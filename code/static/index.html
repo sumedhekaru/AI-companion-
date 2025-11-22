@@ -233,6 +233,17 @@
         margin: 0;
         font-size: 1.5rem;
         color: #333;
+        flex: 1;
+      }
+      
+      .status {
+        font-size: 0.85rem;
+        color: #666;
+        margin-left: 1rem;
+        padding: 0.25rem 0.5rem;
+        background: #f5f5f5;
+        border-radius: 0.25rem;
+        border: 1px solid #ddd;
       }
       
       main {
@@ -310,6 +321,7 @@
         <header>
           <button id="sidebarToggle" class="sidebar-toggle-btn">☰</button>
           <h1>AI Companion</h1>
+          <span id="status" class="status">Ready</span>
         </header>
         
         <main>

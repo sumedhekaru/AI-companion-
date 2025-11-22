@@ -6,11 +6,13 @@ Supports OpenAI with plans for multi-provider expansion.
 import os
 import logging
 from typing import List, Dict, Optional, Any
-import openai
+from pathlib import Path
+from openai import OpenAI
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from the correct location
+env_path = Path(__file__).parent / ".env"
+load_dotenv(env_path)
 
 logger = logging.getLogger(__name__)
 
@@ -23,13 +25,42 @@ class OpenAIClient:
         self.temperature = temperature
         
         # Get API key from environment
-        api_key = os.getenv("EXPO_PUBLIC_OPENAI_API_KEY")
+        api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            raise ValueError("EXPO_PUBLIC_OPENAI_API_KEY environment variable not set")
+            raise ValueError("OPENAI_API_KEY environment variable not set")
         
-        # Initialize OpenAI client
-        openai.api_key = api_key
+        # Initialize OpenAI client (v1.0+ syntax)
+        self.client = OpenAI(api_key=api_key)
         logger.info(f"🤖 OpenAI client initialized with model: {model}")
+    
+    def chat_stream(self, messages: List[Dict[str, str]], max_tokens: int = 1000):
+        """
+        Stream chat messages from OpenAI and yield text chunks.
+        
+        Args:
+            messages: List of message dictionaries with 'role' and 'content'
+            max_tokens: Maximum tokens for response
+            
+        Yields:
+            Text chunks from OpenAI streaming response
+        """
+        try:
+            # Create streaming chat completion
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=self.temperature,
+                max_tokens=max_tokens,
+                stream=True
+            )
+            
+            for chunk in response:
+                if chunk.choices[0].delta.content is not None:
+                    yield chunk.choices[0].delta.content
+                    
+        except Exception as e:
+            logger.error(f"🤖 OpenAI streaming error: {e}")
+            yield "I apologize, but I'm having trouble connecting right now. Please try again."
     
     def chat(self, messages: List[Dict[str, str]], max_tokens: int = 1000) -> str:
         """
@@ -43,10 +74,8 @@ class OpenAIClient:
             AI response text
         """
         try:
-            logger.info(f"🤖 Sending {len(messages)} messages to OpenAI")
-            
-            # Create chat completion
-            response = openai.ChatCompletion.create(
+            # Create chat completion (v1.0+ syntax)
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 temperature=self.temperature,
@@ -56,7 +85,7 @@ class OpenAIClient:
             
             # Extract response text
             ai_response = response.choices[0].message.content
-            logger.info(f"🤖 OpenAI response received: {len(ai_response)} chars")
+            logger.info(f"🤖 OpenAI response: {ai_response[:50]}...")
             
             return ai_response.strip()
             
@@ -103,6 +132,63 @@ class ConversationManager:
         """Add an assistant message to the conversation."""
         self.messages.append({"role": "assistant", "content": content})
         logger.info(f"💬 Added assistant message: {content[:50]}...")
+    
+    async def get_ai_response_stream(self, user_message: str):
+        """
+        Get streaming AI response for user message.
+        
+        Args:
+            user_message: The user's input message
+            
+        Yields:
+            Sentences as they're completed from OpenAI stream
+        """
+        # Add user message
+        self.add_user_message(user_message)
+        
+        # Stream OpenAI response and buffer into sentences
+        text_buffer = ""
+        
+        for chunk in self.llm_client.chat_stream(self.messages):
+            text_buffer += chunk
+            
+            # Check for sentence boundaries
+            sentences = self._extract_sentences(text_buffer)
+            
+            if sentences:
+                # Yield complete sentences and keep remainder in buffer
+                for sentence in sentences[:-1]:  # All but last (incomplete)
+                    yield sentence.strip()
+                
+                text_buffer = sentences[-1]  # Keep incomplete sentence
+        
+        # Yield any remaining text
+        if text_buffer.strip():
+            yield text_buffer.strip()
+        
+        # Add complete response to conversation history
+        complete_response = text_buffer
+        self.add_assistant_message(complete_response)
+    
+    def _extract_sentences(self, text):
+        """
+        Extract complete sentences from text buffer.
+        
+        Args:
+            text: Text buffer to extract sentences from
+            
+        Returns:
+            List of sentences (last one may be incomplete)
+        """
+        import re
+        
+        # Split on sentence boundaries
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        
+        # Filter out empty strings
+        sentences = [s for s in sentences if s.strip()]
+        
+        return sentences
     
     async def get_ai_response(self, user_message: str) -> str:
         """
