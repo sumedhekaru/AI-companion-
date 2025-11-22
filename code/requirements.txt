@@ -1,0 +1,15 @@
+# Text-to-Speech
+realtimetts[kokoro]==0.5.5
+
+# Web Server
+fastapi
+uvicorn[standard]
+
+# Configuration
+python-dotenv
+
+# LLM Provider
+openai
+
+# Data Processing
+numpy
