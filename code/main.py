@@ -7,10 +7,10 @@ import json
 import logging
 import uuid
 from typing import Dict, Any
-import openai
 import os
 from dotenv import load_dotenv
 from tts import synthesize_speech  # Your existing TTS function
+from llm import initialize_llm, get_chat_response, stream_chat_response
 import base64
 
 # Load environment variables
@@ -20,10 +20,13 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize OpenAI
+# Initialize LLM
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     logger.error("OPENAI_API_KEY not found")
+else:
+    initialize_llm(OPENAI_API_KEY)
+    logger.info("🤖 LLM initialized successfully")
 
 app = FastAPI()
 
@@ -77,16 +80,11 @@ async def chat_endpoint(request: dict):
         
         # Process audio normally (your existing working code)
         if tts_enabled:
-            # Generate LLM response for TTS
-            client = openai.OpenAI(api_key=OPENAI_API_KEY)
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",  # Back to working model
-                messages=[{"role": "user", "content": message}],
-                max_tokens=500,  # Back to standard parameter
-                temperature=0.7  # Back to standard parameter
-            )
+            # Get conversation history for non-streaming response
+            existing_history = active_streams.get(session_id, {}).get("conversation_history", [])
             
-            ai_response = response.choices[0].message.content
+            # Generate LLM response for TTS using LLM module with memory
+            ai_response = await get_chat_response(message, existing_history)
             
             # Don't synthesize audio here - SSE will handle real-time audio
             return {
@@ -112,12 +110,15 @@ async def stream_llm_response(session_id: str, message: str):
     try:
         logger.info(f"🧵 Starting SSE stream for session {session_id}")
         
-        # Store session info
+        # Store session info with conversation history
+        existing_history = active_streams.get(session_id, {}).get("conversation_history", [])
+        
         active_streams[session_id] = {
             "message": message,
             "status": "streaming",
             "text": "",
-            "audio_queue": []  # Changed from audio_chunk to audio_queue
+            "audio_queue": [],  # Changed from audio_chunk to audio_queue
+            "conversation_history": existing_history  # Add conversation history
         }
         
         # Create FIFO queue for this session
@@ -126,45 +127,45 @@ async def stream_llm_response(session_id: str, message: str):
         # Start background TTS synthesis task
         synthesis_task = asyncio.create_task(process_text_queue_for_tts_sse(session_id, text_queue))
         
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
-        
-        # Stream LLM response
-        response = client.chat.completions.create(
-            model="gpt-4.1-nano",  # Back to working model
-            messages=[{"role": "user", "content": message}],
-            max_tokens=500,  # Back to standard parameter
-            temperature=0.7,  # Back to standard parameter
-            stream=True
-        )
-        
+        # Stream LLM response using LLM module with memory
         accumulated_text = ""
         sentence_buffer = ""
         
-        for chunk in response:
-            if chunk.choices[0].delta.content:
-                content = chunk.choices[0].delta.content
-                accumulated_text += content
-                sentence_buffer += content
-                
-                # Send text chunk via SSE
-                active_streams[session_id]["text"] = accumulated_text
-                
-                logger.info(f"🧵 SSE chunk: '{content}'")
-                
-                # Check if we have a complete sentence (better boundary detection)
-                # Only process if we have meaningful content and proper sentence ending
-                if (content.endswith(('.', '!', '?')) and 
-                    len(sentence_buffer.strip()) > 10 and 
-                    not sentence_buffer.strip().endswith(('..', '...', '....'))):
-                    # Put sentence in FIFO queue (non-blocking)
-                    await text_queue.put(sentence_buffer.strip())
-                    logger.info(f"🧵 Put sentence in queue: '{sentence_buffer[:30]}...'")
-                    sentence_buffer = ""  # Reset for next sentence
-                elif len(sentence_buffer) > 150:  # Longer buffer for better context
-                    # Put long fragment in queue
-                    await text_queue.put(sentence_buffer.strip())
-                    logger.info(f"🧵 Put long fragment in queue: '{sentence_buffer[:30]}...'")
-                    sentence_buffer = ""  # Reset for next sentence
+        # Get conversation history from session
+        conversation_history = active_streams[session_id]["conversation_history"]
+        
+        async for content in stream_chat_response(message, conversation_history):
+            accumulated_text += content
+            sentence_buffer += content
+            
+            # Send text chunk via SSE
+            active_streams[session_id]["text"] = accumulated_text
+            
+            logger.info(f"🧵 SSE chunk: '{content}'")
+            
+            # Check if we have a complete sentence (better boundary detection)
+            # Only process if we have meaningful content and proper sentence ending
+            if (content.endswith(('.', '!', '?')) and 
+                len(sentence_buffer.strip()) > 10 and 
+                not sentence_buffer.strip().endswith(('..', '...', '....'))):
+                # Put sentence in FIFO queue (non-blocking)
+                await text_queue.put(sentence_buffer.strip())
+                logger.info(f"🧵 Put sentence in queue: '{sentence_buffer[:30]}...'")
+                sentence_buffer = ""  # Reset for next sentence
+            elif len(sentence_buffer) > 150:  # Longer buffer for better context
+                # Put long fragment in queue
+                await text_queue.put(sentence_buffer.strip())
+                logger.info(f"🧵 Put long fragment in queue: '{sentence_buffer[:30]}...'")
+                sentence_buffer = ""  # Reset for next sentence
+        
+        # Update conversation history with the complete exchange
+        user_message = {"role": "user", "content": message}
+        assistant_message = {"role": "assistant", "content": accumulated_text}
+        
+        # Add new messages to history
+        active_streams[session_id]["conversation_history"].extend([user_message, assistant_message])
+        
+        logger.info(f"🧵 Updated conversation history: {len(active_streams[session_id]['conversation_history'])} messages")
         
         # Put any remaining text in queue
         if sentence_buffer.strip():

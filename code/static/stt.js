@@ -7,6 +7,17 @@ let currentText = '';
 let messageBubble = null;
 let silenceTimer = null;
 
+// Session management
+let currentSessionId = null; // Will be generated once and reused
+
+// Initialize session ID when module loads
+function initializeSession() {
+    if (!currentSessionId) {
+        currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        console.log('🆔 Session initialized:', currentSessionId);
+    }
+}
+
 // Initialize speech recognition
 function initializeSpeechRecognition() {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -123,8 +134,8 @@ async function sendMessage() {
     aiMessageBubble = null;
     aiCurrentText = '';
     
-    // Generate session ID for this conversation
-    currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Ensure session is initialized (reuse existing session ID)
+    initializeSession();
     
     // Start SSE stream BEFORE sending message
     startSSEStream(currentSessionId);
