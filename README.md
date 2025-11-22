@@ -1,16 +1,16 @@
-# AI Companion - Real-time Speech-to-Text
+# AI Companion - Real-time Voice Chat System
 
-A fast, real-time speech-to-text application using Vosk for ultra-low latency transcription (~200ms response time).
+A modern real-time voice chat application with browser-based speech recognition, AI-powered conversations, and natural text-to-speech synthesis.
 
 ## Features
 
-- **Real-time streaming**: Text appears as you speak
-- **Ultra-low latency**: ~200ms response time with Vosk
-- **Local processing**: No internet required for STT
-- **Web-based interface**: Simple HTML/JavaScript frontend
-- **WebSocket streaming**: Efficient audio chunk processing
-- **Silence detection**: Smart transcription triggering
-- **Text-to-speech**: Multiple TTS engines supported
+- **Browser-based STT**: Uses Web Speech API - no server-side models needed
+- **Real-time streaming**: Server-Sent Events for instant text and audio delivery
+- **AI conversations**: Powered by OpenAI GPT models
+- **Natural TTS**: High-quality Kokoro voice synthesis
+- **Modular architecture**: Clean separation of STT, TTS, and SSE modules
+- **Zero model downloads**: Start chatting immediately
+- **Cross-platform**: Works in any modern browser
 
 ## Quick Start
 
@@ -21,27 +21,30 @@ git clone <repository-url>
 cd AI-companion
 ```
 
-### 2. Create Virtual Environment
+### 2. Automated Setup
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+chmod +x setup.sh
+./setup.sh
 ```
 
-### 3. Install Dependencies
+### 3. Manual Setup (Alternative)
 
 ```bash
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate (or .\venv\Scripts\Activate.ps1)
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 4. Download Vosk Model (One-time setup)
+### 4. Configure Environment
 
-```bash
-mkdir -p code/models
-cd code/models
-curl -L -o vosk-model-small-en-us-0.15.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
-unzip vosk-model-small-en-us-0.15.zip
-rm vosk-model-small-en-us-0.15.zip
+Create `.env` file in project root:
+
+```env
+OPENAI_API_KEY=your_openai_api_key_here
 ```
 
 ### 5. Run the Application
@@ -53,112 +56,198 @@ python main.py
 
 ### 6. Open Browser
 
-Navigate to: http://localhost:8000
+Navigate to: http://localhost:8001
 
 ## Architecture
 
 ### Backend (FastAPI)
-- **FastAPI**: Web framework with WebSocket support
-- **Vosk**: Real-time speech recognition engine
-- **WebSocket**: Low-latency audio streaming
-- **AsyncIO**: Concurrent processing
+- **FastAPI**: Modern web framework with SSE support
+- **OpenAI**: GPT model for conversations
+- **Kokoro TTS**: High-quality voice synthesis
+- **Server-Sent Events**: Real-time streaming protocol
 
-### Frontend (HTML/JavaScript)
-- **Web Audio API**: Microphone capture
-- **WebSocket**: Real-time audio transmission
-- **Simple UI**: Live transcription display
+### Frontend (Modular JavaScript)
+- **stt.js**: Speech recognition and user input handling
+- **tts.js**: Audio playback and TTS control
+- **script_sse.js**: SSE communication and UI management
+- **Web Speech API**: Browser-based speech recognition
 
 ### Audio Pipeline
 
 ```
-Microphone → Web Audio API → WebSocket Chunks → Vosk STT → Text Output
+Microphone → Web Speech API → STT Module → OpenAI LLM → Kokoro TTS → Audio Output
+```
+
+## Project Structure
+
+```
+AI-companion/
+├── code/
+│   ├── main.py              # FastAPI server with SSE endpoints
+│   ├── tts.py               # Kokoro TTS synthesis
+│   ├── config.py            # TTS configuration
+│   ├── static/
+│   │   ├── index.html       # Main UI
+│   │   ├── stt.js           # Speech-to-Text module
+│   │   ├── tts.js           # Text-to-Speech module
+│   │   ├── script_sse.js    # SSE communication module
+│   │   └── style.css        # UI styling
+├── requirements.txt         # Minimal dependencies
+├── setup.sh                # Automated setup script
+└── README.md               # This file
 ```
 
 ## Configuration
 
-Edit `code/config.py` to adjust settings:
+### TTS Settings (code/config.py)
 
 ```python
 @dataclass
-class SpeechToTextConfig:
-    # Silence detection (ms)
-    silence_ms: int = 300
-    
-    # Maximum buffer time (ms)
-    max_buffer_ms: int = 800
-    
-    # Minimum audio bytes for transcription
-    min_buffer_bytes: int = 4000
+class TTSConfig:
+    # Voice settings
+    voice_name: str = "af_sky"  # Kokoro voice model
     
     # Audio settings
-    sample_rate: int = 16000
-    channels: int = 1
+    speed: float = 1.0
+    pitch: float = 0.0
+    volume: float = 1.0
+    
+    # Streaming settings
+    sentence_buffer_delay: float = 0.5
+    min_sentence_length: int = 10
 ```
+
+### Frontend Configuration (static/script_sse.js)
+
+```javascript
+const CONFIG = {
+    ENABLE_CONSOLE_LOGS: true,
+    SILENCE_TIMEOUT_MS: 2000,
+    MAX_MESSAGE_LENGTH: 1000
+};
+```
+
+## Dependencies
+
+### Essential Packages
+- `fastapi` - Web framework
+- `uvicorn` - ASGI server
+- `openai` - AI model integration
+- `realtimetts[kokoro]` - TTS engine
+- `python-dotenv` - Environment management
+- `numpy` - Data processing
+
+### Browser Requirements
+- **Chrome** (recommended) - Full support on Windows/macOS/Linux
+- **Edge** (recommended) - Full support on Windows/macOS/Linux  
+- **Firefox** - Limited Web Speech API support on all platforms
+- **Safari** - Limited Web Speech API support (macOS/iOS only)
+
+**Note:** The system uses Web Speech API, which works across all operating systems with supported browsers. Chrome/Edge provide the best experience on Windows, macOS, and Linux.
 
 ## Performance
 
-- **Latency**: ~200ms (Vosk) vs 4-13s (Whisper)
-- **CPU Usage**: Low to moderate
-- **Memory**: ~40MB for small Vosk model
-- **Accuracy**: Good for English, slightly less than Whisper
-
-## Model Options
-
-### Vosk Models (Recommended for speed)
-- `vosk-model-small-en-us-0.15` (40MB) - Fast, good accuracy
-- `vosk-model-en-us-0.22` (1.8GB) - Better accuracy, slower
-- Other language models available at [vosk models](https://alphacephei.com/vosk/models)
-
-### Alternative STT (Slower)
-- OpenAI Whisper API (cloud-based)
-- Google Speech-to-Text (cloud-based)
-- Faster-whisper (local, but slower than Vosk)
+- **Latency**: ~500ms total (speech recognition + AI response + TTS)
+- **CPU Usage**: Low (browser handles STT)
+- **Memory**: ~50MB (no local STT models)
+- **Setup Time**: ~30 seconds
 
 ## Troubleshooting
 
 ### Port Already in Use
 ```bash
-lsof -ti:8000 | xargs kill -9
+lsof -ti:8001 | xargs kill -9
 ```
 
-### Vosk Model Not Found
-- Ensure model is in `code/models/vosk-model-small-en-us-0.15/`
-- Check directory permissions
-- Download model again if corrupted
+### OpenAI API Key Issues
+- Ensure `.env` file exists with valid API key
+- Check OpenAI account credits and API access
+- Verify key permissions for chat completions
 
-### No Audio Input
+### Microphone Not Working
 - Check browser microphone permissions
-- Ensure microphone is working
-- Try different browser (Chrome/Edge recommended)
+- Ensure HTTPS for production (HTTP required for localhost)
+- Try Chrome/Edge for best Web Speech API support
 
-### High Latency
-- Reduce `max_buffer_ms` in config
-- Check CPU usage
-- Ensure no other processes using audio
+### TTS Not Playing
+- Check browser audio permissions
+- Ensure TTS toggle is enabled in UI
+- Verify Kokoro model downloaded automatically
+
+### SSE Connection Issues
+- Check browser console for connection errors
+- Verify server is running on correct port
+- Check firewall settings
 
 ## Development
 
-### Project Structure
-```
-AI-companion/
-├── code/
-│   ├── main.py              # FastAPI server
-│   ├── stt_vosk.py          # Vosk STT implementation
-│   ├── config.py            # Configuration settings
-│   ├── static/
-│   │   ├── index.html       # Frontend UI
-│   │   └── script.js        # WebSocket client
-│   └── models/              # Vosk model directory
-├── requirements.txt         # Python dependencies
-├── .gitignore              # Git ignore rules
-└── README.md               # This file
+### Adding New Features
+
+#### New TTS Voices
+```python
+# In tts.py, modify voice_name in config.py
+voice_name: str = "af_bella"  # Available: af_sky, af_bella, af_sarah
 ```
 
-### Adding New Features
-- **New STT engines**: Implement in separate file like `stt_new_engine.py`
-- **TTS integration**: Use existing `realtimetts` package
-- **LLM integration**: Use existing OpenAI/Ollama setup
-- **UI improvements**: Modify `static/index.html` and `static/script.js`
+#### Custom LLM Integration
+```python
+# In main.py, modify the chat completion call
+response = await openai.ChatCompletion.create(
+    model="gpt-4",  # or other models
+    messages=[...],
+    # Custom parameters
+)
+```
+
+#### UI Customization
+- Modify `static/style.css` for visual changes
+- Update `static/index.html` for layout changes
+- Extend JavaScript modules for new interactions
+
+### Testing
+
+```bash
+# Run with debug logging
+python main.py --log-level DEBUG
+
+# Test individual components
+python -c "from tts import synthesize_speech; print('TTS OK')"
+python -c "import openai; print('OpenAI OK')"
+```
+
+## Browser Compatibility
+
+| Feature | Chrome | Edge | Firefox | Safari |
+|---------|--------|------|---------|--------|
+| Speech Recognition | ✅ | ✅ | ⚠️ | ⚠️ |
+| Audio Playback | ✅ | ✅ | ✅ | ✅ |
+| SSE Streaming | ✅ | ✅ | ✅ | ✅ |
+
+## Security Notes
+
+- **Environment variables**: Never commit `.env` files
+- **API keys**: Keep OpenAI keys secure
+- **HTTPS required**: For production deployment
+- **CORS settings**: Configure for your domain
+
+## Deployment
+
+### Docker (Recommended)
+```dockerfile
+FROM python:3.11
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
+```
+
+### Environment Variables
+```env
+OPENAI_API_KEY=your_key
+HOST=0.0.0.0
+PORT=8001
+```
 
 ## License
 
@@ -171,3 +260,10 @@ MIT License - feel free to use and modify.
 3. Make changes
 4. Test thoroughly
 5. Submit pull request
+
+## Support
+
+- Create GitHub issues for bugs
+- Check browser console for errors
+- Review server logs for backend issues
+- Ensure all dependencies are installed correctly

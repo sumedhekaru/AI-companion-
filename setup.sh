@@ -12,18 +12,6 @@ source venv/bin/activate
 echo "📥 Installing dependencies..."
 pip install -r requirements.txt
 
-# Create models directory
-echo "📁 Creating models directory..."
-mkdir -p code/models
-
-# Download Vosk model
-echo "⬇️  Downloading Vosk model (this may take a minute)..."
-cd code/models
-curl -L -o vosk-model-small-en-us-0.15.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
-unzip vosk-model-small-en-us-0.15.zip
-rm vosk-model-small-en-us-0.15.zip
-cd ../..
-
 echo "✅ Setup complete!"
 echo ""
 echo "🎤 To start the application:"
@@ -31,4 +19,4 @@ echo "   cd code"
 echo "   source ../venv/bin/activate"
 echo "   python main.py"
 echo ""
-echo "🌐 Then open: http://localhost:8000"
+echo "🌐 Then open: http://localhost:8001"
