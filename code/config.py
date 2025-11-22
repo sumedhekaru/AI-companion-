@@ -177,3 +177,22 @@ def get_llm_config_dict() -> Dict[str, Any]:
         "temperature": llm_config.temperature,
         "max_tokens": llm_config.max_tokens
     }
+
+def get_server_config_dict() -> Dict[str, Any]:
+    """Get server configuration as a dictionary."""
+    return {
+        "host": server_config.host,
+        "port": server_config.port,
+        "log_level": server_config.log_level
+    }
+
+def get_data_config_dict() -> Dict[str, Any]:
+    """Get data configuration as a dictionary."""
+    return {
+        "database_path": str(data_config.database_path),
+        "data_dir": str(data_config.data_dir),
+        "exports_dir": str(data_config.exports_dir),
+        "auto_backup": data_config.auto_backup,
+        "backup_interval_hours": data_config.backup_interval_hours,
+        "max_backups": data_config.max_backups
+    }
