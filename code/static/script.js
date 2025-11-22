@@ -295,40 +295,58 @@ function toggleTTS() {
   return isTTSEnabled;
 }
 
-function simulateLLMResponse() {
+async function getLLMResponse(userMessage) {
+  try {
+    updateStatus("Thinking...");
+    
+    const response = await fetch('/llm/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: userMessage,
+        conversation_id: currentConversationId
+      }),
+    });
+
+    const data = await response.json();
+    
+    if (data.response) {
+      updateStatus("Ready");
+      return data.response;
+    } else {
+      updateStatus("LLM error");
+      return "I apologize, but I'm having trouble processing that right now.";
+    }
+  } catch (error) {
+    console.error('LLM error:', error);
+    updateStatus("LLM error");
+    return "I apologize, but I'm having trouble connecting right now. Please try again.";
+  }
+}
+
+async function getAIResponse(userMessage) {
   // Add "thinking" indicator
   const thinkingMsg = addMessage("", "assistant", true);
   thinkingMsg.classList.add('recording');
   
-  // Simulate LLM processing delay
-  setTimeout(() => {
-    const responses = [
-      "That's interesting! Tell me more about that.",
-      "I understand. How does that make you feel?",
-      "Thanks for sharing! What would you like to discuss next?",
-      "That's a great point. Let me think about that...",
-      "I appreciate you explaining that. Could you elaborate?",
-      "Fascinating! What are your thoughts on this?",
-      "I see. That gives me a better perspective.",
-      "Thank you for that insight. What's on your mind?"
-    ];
+  try {
+    // Get real LLM response
+    const aiResponse = await getLLMResponse(userMessage);
     
-    const randomResponse = responses[Math.floor(Math.random() * responses.length)];
-    finishProcessing(randomResponse);
+    // Update the thinking message with real response
+    finishProcessing(aiResponse);
     
-    // Play TTS audio for the response
-    setTimeout(() => {
-      playTTSAudio(randomResponse);
-    }, 500); // Small delay before TTS
+    // Play TTS if enabled
+    if (isTTSEnabled) {
+      await playTTSAudio(aiResponse);
+    }
     
-    // Return to monitoring mode after LLM response (no speech session active)
-    setTimeout(() => {
-      if (!isTTSEnabled) {
-        updateStatus("Listening...");
-      }
-      // Don't restart silence timer here - wait for actual speech
-    }, 500);
-  }, 1500); // Simulate 1.5 second "thinking" time
+  } catch (error) {
+    console.error('AI response error:', error);
+    finishProcessing("I apologize, but I'm having trouble processing that right now. Please try again.");
+  }
 }
 
 async function startStreaming() {
@@ -540,7 +558,7 @@ stopBtn.addEventListener("click", () => {
     // If there's a user message, trigger LLM response immediately
     if (currentUserMessage.trim()) {
       setTimeout(() => {
-        simulateLLMResponse();
+        getAIResponse(currentUserMessage);
       }, 500); // Small delay to show final transcription
     }
   }

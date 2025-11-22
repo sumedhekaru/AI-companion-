@@ -17,8 +17,9 @@ from fastapi.responses import HTMLResponse, FileResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from stt_vosk import VoskStreamingTranscriber
-from tts import get_tts_processor, synthesize_speech
-from config import SpeechToTextConfig, get_tts_config_dict, get_stt_config_dict, get_llm_config_dict, tts_config
+from tts import get_tts_processor
+from config import get_tts_config_dict, get_stt_config_dict, get_llm_config_dict, get_server_config_dict
+from llm import get_conversation_manager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -146,6 +147,52 @@ async def _queue_reader(ws: WebSocket, queue: asyncio.Queue[str]):
 # TTS Endpoints
 class TTSRequest(BaseModel):
     text: str
+
+
+# LLM Endpoints
+class LLMRequest(BaseModel):
+    message: str
+    conversation_id: Optional[str] = None
+
+
+class LLMResponse(BaseModel):
+    response: str
+    conversation_id: str
+
+
+@app.post("/llm/chat", response_model=LLMResponse)
+async def chat_with_llm(request: LLMRequest):
+    """Send message to LLM and get response."""
+    try:
+        conversation_manager = get_conversation_manager()
+        
+        # Get AI response
+        ai_response = await conversation_manager.get_ai_response(request.message)
+        
+        logger.info(f"🤖 LLM response: {ai_response[:50]}...")
+        
+        return {
+            "response": ai_response,
+            "conversation_id": request.conversation_id or "default"
+        }
+        
+    except Exception as e:
+        logger.error(f"🤖 LLM chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/llm/clear")
+async def clear_conversation():
+    """Clear the conversation history."""
+    try:
+        conversation_manager = get_conversation_manager()
+        conversation_manager.clear_conversation()
+        logger.info("🤖 Conversation cleared")
+        return {"success": True}
+        
+    except Exception as e:
+        logger.error(f"🤖 Clear conversation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/tts/synthesize")
