@@ -1,0 +1,9 @@
+# FastAPI for web server
+fastapi
+uvicorn
+
+# OpenAI for LLM
+openai
+
+# Environment variables
+python-dotenv

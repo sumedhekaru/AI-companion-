@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Companion - RealtimeTTS Edition</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <div class="chat-container">
+            <div class="chat-header">
+                <h1>AI Companion</h1>
+                <div class="controls">
+                    <button id="ttsToggle" class="toggle-btn active">🔊 TTS On</button>
+                    <button id="clearBtn" class="clear-btn">🗑️ Clear</button>
+                </div>
+            </div>
+            
+            <div class="messages-container">
+                <div id="messages" class="messages"></div>
+            </div>
+            
+            <div class="input-container">
+                <div class="status-bar">
+                    <span id="status">Ready</span>
+                </div>
+                
+                <div class="voice-controls">
+                    <button id="startBtn" class="voice-btn start">🎤 Start Speaking</button>
+                    <button id="stopBtn" class="voice-btn stop" disabled>🛑 Stop</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/script_sse.js"></script>
+</body>
+</html>
