@@ -158,8 +158,8 @@ class KokoroTTSProcessor:
         Yields:
             Audio chunks as bytes
         """
-        if not self.engine:
-            logger.error("🔊 TTS engine not initialized")
+        if not self.stream:
+            logger.error("🔊 TTS stream not initialized")
             return
         
         if not text or not text.strip():
@@ -167,9 +167,9 @@ class KokoroTTSProcessor:
             return
         
         try:
-            self.engine.feed(text)
+            self.stream.feed(text)
             
-            for chunk in self.engine.stream():
+            for chunk in self.stream.stream():
                 if chunk is not None:
                     # Convert float32 chunk to int16 bytes
                     chunk_int16 = (chunk * 32767).astype(np.int16)

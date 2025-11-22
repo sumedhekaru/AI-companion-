@@ -115,9 +115,8 @@ class ConversationManager:
     
     def __init__(self, system_prompt_type: str = "default"):
         """Initialize conversation manager."""
-        from system_prompts import get_system_prompt
-        
-        self.system_prompt = get_system_prompt(system_prompt_type)
+        # Use simple system prompt instead of importing system_prompts
+        self.system_prompt = "You are a helpful AI assistant. Be concise and friendly. Remember the context of our conversation."
         self.messages = [{"role": "system", "content": self.system_prompt}]
         self.llm_client = OpenAIClient()
         
@@ -149,26 +148,42 @@ class ConversationManager:
         # Stream OpenAI response and buffer into sentences
         text_buffer = ""
         
+        logger.info(f"🔊 Starting LLM stream for: '{user_message[:50]}...'")
+        
+        chunk_count = 0
         for chunk in self.llm_client.chat_stream(self.messages):
+            chunk_count += 1
             text_buffer += chunk
+            
+            # Only log every 10th chunk to reduce noise
+            if chunk_count % 10 == 0:
+                logger.info(f"🔊 Received chunk {chunk_count}, buffer length: {len(text_buffer)}")
             
             # Check for sentence boundaries
             sentences = self._extract_sentences(text_buffer)
             
             if sentences:
+                logger.info(f"🔊 Found {len(sentences)} sentences, buffer: '{text_buffer}'")
+                
                 # Yield complete sentences and keep remainder in buffer
-                for sentence in sentences[:-1]:  # All but last (incomplete)
-                    yield sentence.strip()
+                for i, sentence in enumerate(sentences[:-1]):  # All but last (incomplete)
+                    sentence_clean = sentence.strip()
+                    if sentence_clean:
+                        logger.info(f"🔊 YIELDING sentence: '{sentence_clean}'")
+                        yield sentence_clean
                 
                 text_buffer = sentences[-1]  # Keep incomplete sentence
+                logger.info(f"🔊 Remaining buffer: '{text_buffer}'")
         
         # Yield any remaining text
         if text_buffer.strip():
+            logger.info(f"🔊 YIELDING final sentence: '{text_buffer.strip()}'")
             yield text_buffer.strip()
         
         # Add complete response to conversation history
         complete_response = text_buffer
         self.add_assistant_message(complete_response)
+        logger.info(f"🔊 Stream complete")
     
     def _extract_sentences(self, text):
         """
@@ -222,9 +237,8 @@ class ConversationManager:
     
     def set_system_prompt_type(self, prompt_type: str) -> None:
         """Change the system prompt type."""
-        from system_prompts import get_system_prompt
-        
-        self.system_prompt = get_system_prompt(prompt_type)
+        # Use simple system prompt instead of importing system_prompts
+        self.system_prompt = "You are a helpful AI assistant. Be concise and friendly. Remember the context of our conversation."
         self.messages[0] = {"role": "system", "content": self.system_prompt}
         logger.info(f"💬 System prompt changed to: {prompt_type}")
 
