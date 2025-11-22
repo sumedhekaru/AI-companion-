@@ -1,5 +1,12 @@
 // Speech-to-Text (STT) Functions for AI Companion
 
+// STT module state
+let recognition = null;
+let isListening = false;
+let currentText = '';
+let messageBubble = null;
+let silenceTimer = null;
+
 // Initialize speech recognition
 function initializeSpeechRecognition() {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -97,6 +104,84 @@ function handleSpeech(text, isFinal) {
         const displayText = currentText + ' ' + text.replace('[PARTIAL] ', '').trim();
         updateBubble(displayText);
     }
+}
+
+// Silence timer - triggers after speech stops
+function startSilenceTimer() {
+    silenceTimer = setTimeout(() => {
+        sendMessage();
+    }, CONFIG.SILENCE_TIMEOUT_MS);
+}
+
+// Send message to backend - final step of speech pipeline
+async function sendMessage() {
+    if (!currentText.trim()) return;
+    
+    updateStatus('Processing...');
+    
+    // Reset AI bubble state for new conversation
+    aiMessageBubble = null;
+    aiCurrentText = '';
+    
+    // Generate session ID for this conversation
+    currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Start SSE stream BEFORE sending message
+    startSSEStream(currentSessionId);
+    
+    // Finalize user message bubble
+    if (messageBubble) {
+        messageBubble.innerHTML = currentText;
+        messageBubble.classList.remove('recording');
+    }
+    
+    try {
+        // Send message via HTTP POST
+        const response = await fetch('/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message: currentText.trim(),
+                session_id: currentSessionId,
+                tts: ttsEnabled
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (CONFIG.ENABLE_CONSOLE_LOGS) {
+            console.log('✅ Received response:', data);
+            console.log('🔊 Audio chunks:', data.audio_chunks?.length || 0);
+        }
+        
+        // Handle TTS audio
+        if (ttsEnabled && data.audio_chunks && data.audio_chunks.length > 0) {
+            playAudioChunks(data.audio_chunks);
+        }
+        
+        updateStatus('Ready');
+        
+    } catch (error) {
+        console.error('❌ Send message error:', error);
+        updateStatus('Error');
+        
+        // Close SSE stream on error
+        if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+        }
+    }
+    
+    // Reset for next message
+    currentText = '';
+    messageBubble = null;
+    silenceTimer = null;
 }
 
 // Start listening
