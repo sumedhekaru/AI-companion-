@@ -4,7 +4,7 @@ import openai
 import logging
 from typing import AsyncGenerator, List, Dict
 from system_prompts import get_system_prompt
-from config import OPENAI_API_KEY, LLM_MODEL, LLM_MAX_TOKENS, LLM_TEMPERATURE
+from config import OPENAI_API_KEY, LLM_MODEL, LLM_MAX_TOKENS, LLM_TEMPERATURE, LLM_MAX_HISTORY_MESSAGES
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +31,13 @@ def build_messages(message: str, conversation_history: List[Dict[str, str]] = No
     # Add current user message
     messages.append({"role": "user", "content": message})
     
-    # Manage context window (keep last 10 messages to stay within token limits)
-    if len(messages) > 10:
-        # Keep system prompt and last 9 messages
+    # Manage context window using configured maximum history size
+    if len(messages) > LLM_MAX_HISTORY_MESSAGES:
+        # Keep system prompt and last N-1 non-system messages
         system_messages = [msg for msg in messages if msg["role"] == "system"]
         conversation_messages = [msg for msg in messages if msg["role"] != "system"]
-        recent_messages = conversation_messages[-9:]
+        keep_count = max(LLM_MAX_HISTORY_MESSAGES - 1, 1)
+        recent_messages = conversation_messages[-keep_count:]
         messages = system_messages + recent_messages
     
     return messages

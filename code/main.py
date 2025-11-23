@@ -11,6 +11,7 @@ import os
 from dotenv import load_dotenv
 from tts import synthesize_speech  # Your existing TTS function
 from llm import stream_chat_response
+from config import SSE_POLL_INTERVAL_SECONDS, SSE_QUEUE_LOG_INTERVAL
 import base64
 
 # Load environment variables
@@ -236,8 +237,9 @@ async def process_text_queue_for_tts_sse(session_id: str, text_queue: asyncio.Qu
             # Sequential synthesis - process immediately as it arrives
             print(f"🎵 SYNTHESIZING: '{text_chunk}'")
             
-            # Add delay to prevent TTS engine overload
-            await asyncio.sleep(0.3)  # Increased from 0.1 to prevent conflicts
+            # Add delay to prevent TTS engine overload (configurable)
+            from config import TTSConfig
+            await asyncio.sleep(TTSConfig.default_silence_duration)
             
             # Synthesize audio chunk
             audio_bytes = await synthesize_speech(text_chunk)
@@ -291,8 +293,8 @@ async def stream_endpoint(session_id: str):
                 if session_id in active_streams:
                     stream_data = active_streams[session_id]
                     
-                    # Log queue state every 10 loops
-                    if loop_count % 10 == 0:
+                    # Log queue state every N loops (configurable)
+                    if loop_count % SSE_QUEUE_LOG_INTERVAL == 0:
                         queue_size = len(stream_data.get("audio_queue", []))
                         logger.info(f"🧵 SSE LOOP {loop_count}: Queue size={queue_size}, Status={stream_data.get('status')}")
                     
@@ -329,7 +331,7 @@ async def stream_endpoint(session_id: str):
                     logger.warning(f"🧵 SSE LOOP {loop_count}: Session {session_id} not found in active_streams")
                     break
                 
-                await asyncio.sleep(0.1)  # Small delay
+                await asyncio.sleep(SSE_POLL_INTERVAL_SECONDS)  # Small delay, configurable
                 
         except Exception as e:
             logger.error(f"🧵 SSE error: {e}")

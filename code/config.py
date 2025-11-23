@@ -26,6 +26,11 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Load from .env file
 LLM_MODEL = "gpt-3.5-turbo"  # OpenAI model to use
 LLM_MAX_TOKENS = 500  # Maximum tokens in response
 LLM_TEMPERATURE = 0.7  # Creativity level (0.0-1.0)
+LLM_MAX_HISTORY_MESSAGES = 10  # Max non-system messages to keep in history
+
+# Streaming / SSE Settings
+SSE_POLL_INTERVAL_SECONDS = 0.1  # How often to poll for new SSE data
+SSE_QUEUE_LOG_INTERVAL = 10      # How many loops between queue state logs
 
 # TTS Settings
 class TTSConfig:
