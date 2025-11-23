@@ -111,6 +111,10 @@ async def chat_endpoint(request: dict):
             }
             print(f"🔍 DEBUG: Created new session with empty history")
         else:
+            active_streams[session_id]["message"] = message
+            active_streams[session_id]["status"] = "streaming"
+            active_streams[session_id]["text"] = ""
+            active_streams[session_id]["audio_queue"] = []
             print(f"🔍 DEBUG: Found existing session with history: {active_streams[session_id]['conversation_history']}")
         
         # Start streaming LLM response in background
@@ -139,6 +143,7 @@ async def chat_endpoint(request: dict):
 
 async def stream_llm_response(session_id: str, message: str):
     """Stream LLM response via SSE and use FIFO queue for audio synthesis."""
+    global active_streams
     try:
         logger.info(f"🧵 Starting SSE stream for session {session_id}")
         
@@ -226,6 +231,7 @@ async def stream_llm_response(session_id: str, message: str):
 
 async def process_text_queue_for_tts_sse(session_id: str, text_queue: asyncio.Queue):
     """Process text from FIFO queue and send audio chunks via SSE."""
+    global active_streams
     try:
         logger.info(f"🎵 Starting TTS synthesis for session {session_id}")
         
@@ -274,7 +280,7 @@ async def process_text_queue_for_tts_sse(session_id: str, text_queue: asyncio.Qu
 @app.get("/stream/{session_id}")
 async def stream_endpoint(session_id: str):
     """SSE endpoint for real-time text streaming."""
-    
+    global active_streams
     async def event_stream():
         try:
             # Send initial connection event
@@ -344,9 +350,13 @@ async def stream_endpoint(session_id: str):
             logger.error(f"🧵 SSE error: {e}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
         finally:
-            # Clean up session
+            # Clean up streaming state, but preserve conversation history
             if session_id in active_streams:
-                del active_streams[session_id]
+                # Reset streaming fields but keep conversation history
+                active_streams[session_id]["status"] = "completed"
+                active_streams[session_id]["text"] = ""
+                active_streams[session_id]["audio_queue"] = []
+                # conversation_history is preserved
     
     return StreamingResponse(
         event_stream(),
