@@ -83,9 +83,9 @@ Microphone → Web Speech API → STT Module → OpenAI LLM → Kokoro TTS → A
 ```
 AI-companion/
 ├── code/
-│   ├── main.py              # FastAPI server with SSE endpoints
+│   ├── main.py              # FastAPI server with SSE/LLM/TTS pipeline
 │   ├── tts.py               # Kokoro TTS synthesis
-│   ├── config.py            # TTS configuration
+│   ├── config.py            # Backend config: LLM, SSE, and TTS settings
 │   ├── static/
 │   │   ├── index.html       # Main UI
 │   │   ├── stt.js           # Speech-to-Text module
@@ -99,33 +99,65 @@ AI-companion/
 
 ## Configuration
 
-### TTS Settings (code/config.py)
+### Backend Configuration (code/config.py)
+
+The backend configuration lives in `code/config.py` and is imported by `main.py`, `llm.py`, and `tts.py`.
+
+Key settings:
 
 ```python
-@dataclass
+# LLM Settings
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # from .env
+LLM_MODEL = "gpt-3.5-turbo"
+LLM_MAX_TOKENS = 500
+LLM_TEMPERATURE = 0.7
+LLM_MAX_HISTORY_MESSAGES = 10
+
+# Streaming / SSE Settings
+SSE_POLL_INTERVAL_SECONDS = 0.1
+SSE_QUEUE_LOG_INTERVAL = 10
+
+# TTS Settings
 class TTSConfig:
-    # Voice settings
-    voice_name: str = "af_sky"  # Kokoro voice model
-    
-    # Audio settings
-    speed: float = 1.0
-    pitch: float = 0.0
-    volume: float = 1.0
-    
-    # Streaming settings
-    sentence_buffer_delay: float = 0.5
-    min_sentence_length: int = 10
+    voice = "af_heart"
+    speed = 1.0
+    fast_sentence_fragment = False
+    minimum_sentence_length = 0
+    minimum_first_fragment_length = 0
+    comma_silence_duration = 0.3
+    sentence_silence_duration = 0.5
+    default_silence_duration = 0.2
+    force_first_fragment_after_words = 0
+
+tts_config = TTSConfig()
 ```
 
-### Frontend Configuration (static/script_sse.js)
+You usually only need to edit:
+
+- `OPENAI_API_KEY` in `.env`
+- `LLM_MODEL`, `LLM_MAX_TOKENS`, `LLM_TEMPERATURE`, `LLM_MAX_HISTORY_MESSAGES`
+- `TTSConfig.voice` / `TTSConfig.speed` and silence timings if you want different pacing.
+
+### Frontend Configuration (static/config.js)
+
+The browser-side behavior and thresholds are configured in `code/static/config.js`:
 
 ```javascript
-const CONFIG = {
+// Frontend configuration for AI Companion
+window.CONFIG = {
     ENABLE_CONSOLE_LOGS: true,
-    SILENCE_TIMEOUT_MS: 2000,
-    MAX_MESSAGE_LENGTH: 1000
+    SILENCE_TIMEOUT_MS: 3000,
+    MAX_MESSAGE_LENGTH: 1000,
+    STT_CONFIDENCE_THRESHOLD: 0.7,
+    STT_RESTART_DELAY_MS: 100
 };
 ```
+
+This object is loaded before `stt.js` and `script_sse.js`, which read from `window.CONFIG` to control:
+
+- Silence timeout before sending an utterance
+- STT confidence threshold and restart delay
+- Console logging verbosity
 
 ## Dependencies
 
