@@ -35,7 +35,7 @@ function initializeSpeechRecognition() {
             
             // Filter out low-confidence results (likely background noise/AI audio)
             const confidence = event.results[i][0].confidence;
-            if (confidence < 0.7) {
+            if (confidence < CONFIG.STT_CONFIDENCE_THRESHOLD) {
                 if (CONFIG.ENABLE_CONSOLE_LOGS) console.log('🔇 Low confidence audio filtered out:', confidence);
                 continue;
             }
@@ -74,7 +74,7 @@ function initializeSpeechRecognition() {
     recognition.onend = () => {
         if (isListening) {
             // Restart if we're supposed to be listening
-            setTimeout(() => recognition.start(), 100);
+            setTimeout(() => recognition.start(), CONFIG.STT_RESTART_DELAY_MS);
         }
     };
 }

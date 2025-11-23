@@ -1,0 +1,8 @@
+// Frontend configuration for AI Companion
+window.CONFIG = {
+    ENABLE_CONSOLE_LOGS: true,
+    SILENCE_TIMEOUT_MS: 3000,
+    MAX_MESSAGE_LENGTH: 1000,
+    STT_CONFIDENCE_THRESHOLD: 0.7,
+    STT_RESTART_DELAY_MS: 100
+};

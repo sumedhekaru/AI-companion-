@@ -1,12 +1,5 @@
 // AI Companion - Server-Sent Events Edition
 
-// Configuration
-const CONFIG = {
-    ENABLE_CONSOLE_LOGS: true,
-    SILENCE_TIMEOUT_MS: 2000,
-    MAX_MESSAGE_LENGTH: 1000
-};
-
 // Global state (cross-cutting only)
 let ttsEnabled = true;
 let isAISpeaking = false;
