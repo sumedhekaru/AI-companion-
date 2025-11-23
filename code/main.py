@@ -10,7 +10,7 @@ from typing import Dict, Any
 import os
 from dotenv import load_dotenv
 from tts import synthesize_speech  # Your existing TTS function
-from llm import initialize_llm, get_chat_response, stream_chat_response
+from llm import stream_chat_response
 import base64
 
 # Load environment variables
@@ -20,13 +20,8 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize LLM
+# Get OpenAI API key
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    logger.error("OPENAI_API_KEY not found")
-else:
-    initialize_llm(OPENAI_API_KEY)
-    logger.info("🤖 LLM initialized successfully")
 
 app = FastAPI()
 
@@ -75,27 +70,30 @@ async def chat_endpoint(request: dict):
         if not OPENAI_API_KEY:
             raise HTTPException(status_code=500, detail="OpenAI API key not configured")
         
+        # Initialize session data before starting background task
+        if session_id not in active_streams:
+            active_streams[session_id] = {
+                "message": message,
+                "status": "initializing",
+                "text": "",
+                "audio_queue": [],
+                "conversation_history": []
+            }
+        
         # Start streaming LLM response in background
         asyncio.create_task(stream_llm_response(session_id, message))
         
-        # Process audio normally (your existing working code)
+        # Return immediately - streaming will handle TTS and text display
         if tts_enabled:
-            # Get conversation history for non-streaming response
-            existing_history = active_streams.get(session_id, {}).get("conversation_history", [])
-            
-            # Generate LLM response for TTS using LLM module with memory
-            ai_response = await get_chat_response(message, existing_history)
-            
-            # Don't synthesize audio here - SSE will handle real-time audio
             return {
-                "response": ai_response,
+                "response": "Processing...",  # Placeholder, real response via SSE
                 "tts": True,
-                "audio_chunks": [],  # Empty - SSE will handle audio
+                "audio_chunks": [],  # SSE will handle audio
                 "session_id": session_id
             }
         else:
             return {
-                "response": "TTS disabled",
+                "response": "Processing...",  # Placeholder, real response via SSE
                 "tts": False,
                 "audio_chunks": [],
                 "session_id": session_id
