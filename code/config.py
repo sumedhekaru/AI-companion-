@@ -9,18 +9,6 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# Speech Recognition Settings
-SILENCE_TIMEOUT_MS = 3000  # 3 seconds of silence before sending to AI
-SPEECH_RECOGNITION_LANG = "en-US"  # Language for speech recognition
-
-# UI Settings
-MAX_MESSAGE_LENGTH = 1000  # Maximum characters per message
-ANIMATION_SPEED_MS = 200  # Animation speed for UI transitions
-
-# Debug Settings
-ENABLE_CONSOLE_LOGS = True  # Enable/disable console logging
-ENABLE_DEBUG_BUBBLE_LOGS = False  # Enable detailed bubble creation logs
-
 # LLM Settings
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Load from .env file
 LLM_MODEL = "gpt-3.5-turbo"  # OpenAI model to use
@@ -49,9 +37,8 @@ class TTSConfig:
     default_silence_duration = 0.2   # Slightly longer default pause
     force_first_fragment_after_words = 0  # Not used - we provide complete sentences
     
-    # Audio boundary settings to prevent artifacts
-    add_silence_at_end = True  # Add silence to prevent abrupt endings
-    end_silence_duration = 0.1  # 100ms silence at chunk end to prevent clicks
+    # Audio boundary settings to prevent artifacts (currently unused in backend)
+    # Placeholder attributes can be added here in the future if needed.
 
 # Global TTS config instance
 tts_config = TTSConfig()
