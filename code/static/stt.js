@@ -123,11 +123,11 @@ async function sendMessage() {
     aiMessageBubble = null;
     aiCurrentText = '';
     
-    // Generate session ID for this conversation
-    currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Don't generate session ID - let backend create it
+    // currentSessionId = null;  // Already null for first message
     
-    // Start SSE stream BEFORE sending message
-    startSSEStream(currentSessionId);
+    // Start SSE stream with temp session (will be updated after backend response)
+    startSSEStream("temp_session");
     
     // Finalize user message bubble
     if (messageBubble) {
@@ -154,6 +154,18 @@ async function sendMessage() {
         }
         
         const data = await response.json();
+        
+        // Extract and store backend session_id
+        if (data.session_id) {
+            currentSessionId = data.session_id;
+            console.log('🔍 Received session_id from backend:', currentSessionId);
+            
+            // Restart SSE stream with correct session_id
+            if (eventSource) {
+                eventSource.close();
+            }
+            startSSEStream(currentSessionId);
+        }
         
         if (CONFIG.ENABLE_CONSOLE_LOGS) {
             console.log('✅ Received response:', data);

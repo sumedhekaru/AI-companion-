@@ -86,9 +86,16 @@ async def startup_event():
 @app.post("/chat")
 async def chat_endpoint(request: dict):
     """Process chat message and return audio chunks."""
+    
+    global active_streams
+    
     try:
         message = request.get("message", "")
-        session_id = request.get("session_id", str(uuid.uuid4()))
+        browser_session_id = request.get("session_id")
+        session_id = get_or_create_session(browser_session_id)
+
+        print("browser_session_id: ", browser_session_id)
+        print("final session_id: ", session_id)
         tts_enabled = request.get("tts", True)
         
         logger.info(f"🎤 Received message: {message}")
@@ -102,8 +109,12 @@ async def chat_endpoint(request: dict):
                 "audio_queue": [],
                 "conversation_history": []
             }
+            print(f"🔍 DEBUG: Created new session with empty history")
+        else:
+            print(f"🔍 DEBUG: Found existing session with history: {active_streams[session_id]['conversation_history']}")
         
         # Start streaming LLM response in background
+        print(f"🔍 DEBUG: Starting stream_llm_response with history: {active_streams[session_id]['conversation_history']}")
         asyncio.create_task(stream_llm_response(session_id, message))
         
         # Return immediately - streaming will handle TTS and text display
@@ -133,6 +144,7 @@ async def stream_llm_response(session_id: str, message: str):
         
         # Store session info with conversation history
         existing_history = active_streams.get(session_id, {}).get("conversation_history", [])
+        print(f"🔍 DEBUG: stream_llm_response received history: {existing_history}")
         
         active_streams[session_id] = {
             "message": message,
@@ -154,6 +166,7 @@ async def stream_llm_response(session_id: str, message: str):
         
         # Get conversation history from session
         conversation_history = active_streams[session_id]["conversation_history"]
+        print(f"🔍 DEBUG: About to call LLM with conversation_history: {conversation_history}")
         
         async for content in stream_chat_response(message, conversation_history):
             accumulated_text += content
@@ -186,6 +199,7 @@ async def stream_llm_response(session_id: str, message: str):
         # Add new messages to history
         active_streams[session_id]["conversation_history"].extend([user_message, assistant_message])
         
+        print(f"🔍 DEBUG: Updated conversation_history: {active_streams[session_id]['conversation_history']}")
         logger.info(f"🧵 Updated conversation history: {len(active_streams[session_id]['conversation_history'])} messages")
         
         # Put any remaining text in queue
