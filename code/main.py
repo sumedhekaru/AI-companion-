@@ -52,18 +52,12 @@ def get_or_create_session(requested_id: str = None) -> str:
     """Get existing session or create new one."""
     global current_session_id
     
-    print(f"🔍 DEBUG: get_or_create_session called with requested_id: {requested_id}")
-    print(f"🔍 DEBUG: current_session_id before: {current_session_id}")
-    
     if requested_id and current_session_id == requested_id:
-        print(f"🔍 DEBUG: Reusing existing session: {current_session_id}")
         return current_session_id  # Reuse existing
     
     if not current_session_id:
         current_session_id = str(uuid.uuid4())  # Create new
-        print(f"🔍 DEBUG: Created new session: {current_session_id}")
     
-    print(f"🔍 DEBUG: Returning session: {current_session_id}")
     return current_session_id
 
 # Global TTS processor instance
@@ -109,16 +103,13 @@ async def chat_endpoint(request: dict):
                 "audio_queue": [],
                 "conversation_history": []
             }
-            print(f"🔍 DEBUG: Created new session with empty history")
         else:
             active_streams[session_id]["message"] = message
             active_streams[session_id]["status"] = "streaming"
             active_streams[session_id]["text"] = ""
             active_streams[session_id]["audio_queue"] = []
-            print(f"🔍 DEBUG: Found existing session with history: {active_streams[session_id]['conversation_history']}")
         
         # Start streaming LLM response in background
-        print(f"🔍 DEBUG: Starting stream_llm_response with history: {active_streams[session_id]['conversation_history']}")
         asyncio.create_task(stream_llm_response(session_id, message))
         
         # Return immediately - streaming will handle TTS and text display
@@ -145,18 +136,17 @@ async def stream_llm_response(session_id: str, message: str):
     """Stream LLM response via SSE and use FIFO queue for audio synthesis."""
     global active_streams
     try:
-        logger.info(f"🧵 Starting SSE stream for session {session_id}")
+        logger.info(f" Starting SSE stream for session {session_id}")
         
         # Store session info with conversation history
         existing_history = active_streams.get(session_id, {}).get("conversation_history", [])
-        print(f"🔍 DEBUG: stream_llm_response received history: {existing_history}")
         
         active_streams[session_id] = {
             "message": message,
             "status": "streaming",
             "text": "",
-            "audio_queue": [],  # Changed from audio_chunk to audio_queue
-            "conversation_history": existing_history  # Add conversation history
+            "audio_queue": [],
+            "conversation_history": existing_history
         }
         
         # Create FIFO queue for this session
