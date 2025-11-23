@@ -20,9 +20,6 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Get OpenAI API key
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
 app = FastAPI()
 
 # Mount static files

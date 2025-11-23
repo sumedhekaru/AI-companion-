@@ -4,16 +4,16 @@ import openai
 import logging
 from typing import AsyncGenerator, List, Dict
 from system_prompts import get_system_prompt
-import os
+from config import OPENAI_API_KEY, LLM_MODEL, LLM_MAX_TOKENS, LLM_TEMPERATURE
 
 logger = logging.getLogger(__name__)
 
-# Single OpenAI client instance - initialized once when module loads
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    raise ValueError("OPENAI_API_KEY environment variable not set")
+"""LLM utilities backed by OpenAI, configured via config.py."""
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+# Single OpenAI client instance - initialized once when module loads.
+# The actual API key is validated lazily in stream_chat_response so that
+# application startup does not crash if the key is missing.
+client: openai.OpenAI | None = None
 
 def build_messages(message: str, conversation_history: List[Dict[str, str]] = None, 
                   system_prompt_type: str = "default") -> List[Dict[str, str]]:
@@ -42,10 +42,17 @@ def build_messages(message: str, conversation_history: List[Dict[str, str]] = No
     return messages
 
 async def stream_chat_response(message: str, conversation_history: List[Dict[str, str]] = None,
-                              model: str = "gpt-4.1-nano", max_tokens: int = 500, 
-                              temperature: float = 0.7, system_prompt_type: str = "default") -> AsyncGenerator[str, None]:
+                              model: str = LLM_MODEL, max_tokens: int = LLM_MAX_TOKENS, 
+                              temperature: float = LLM_TEMPERATURE, system_prompt_type: str = "default") -> AsyncGenerator[str, None]:
     """Stream chat response with memory support - yields chunks for real-time display."""
     try:
+        if not OPENAI_API_KEY:
+            raise RuntimeError("OPENAI_API_KEY is not set in config.py / environment")
+
+        global client
+        if client is None:
+            client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
         logger.info(f"🤖 Starting streaming response with {len(conversation_history or [])} history messages")
         
         messages = build_messages(message, conversation_history, system_prompt_type)
