@@ -161,7 +161,6 @@ async def stream_llm_response(session_id: str, message: str):
         
         # Get conversation history from session
         conversation_history = active_streams[session_id]["conversation_history"]
-        print(f"🔍 DEBUG: About to call LLM with conversation_history: {conversation_history}")
         
         async for content in stream_chat_response(message, conversation_history):
             accumulated_text += content
@@ -194,7 +193,6 @@ async def stream_llm_response(session_id: str, message: str):
         # Add new messages to history
         active_streams[session_id]["conversation_history"].extend([user_message, assistant_message])
         
-        print(f"🔍 DEBUG: Updated conversation_history: {active_streams[session_id]['conversation_history']}")
         logger.info(f"🧵 Updated conversation history: {len(active_streams[session_id]['conversation_history'])} messages")
         
         # Put any remaining text in queue
