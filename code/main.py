@@ -40,6 +40,27 @@ app.add_middleware(
 # Store streaming sessions
 active_streams: Dict[str, Dict[str, Any]] = {}
 
+# Global session ID tracker
+current_session_id: str = None
+
+def get_or_create_session(requested_id: str = None) -> str:
+    """Get existing session or create new one."""
+    global current_session_id
+    
+    print(f"🔍 DEBUG: get_or_create_session called with requested_id: {requested_id}")
+    print(f"🔍 DEBUG: current_session_id before: {current_session_id}")
+    
+    if requested_id and current_session_id == requested_id:
+        print(f"🔍 DEBUG: Reusing existing session: {current_session_id}")
+        return current_session_id  # Reuse existing
+    
+    if not current_session_id:
+        current_session_id = str(uuid.uuid4())  # Create new
+        print(f"🔍 DEBUG: Created new session: {current_session_id}")
+    
+    print(f"🔍 DEBUG: Returning session: {current_session_id}")
+    return current_session_id
+
 # Global TTS processor instance
 tts_processor = None
 
@@ -66,10 +87,7 @@ async def chat_endpoint(request: dict):
         tts_enabled = request.get("tts", True)
         
         logger.info(f"🎤 Received message: {message}")
-        
-        if not OPENAI_API_KEY:
-            raise HTTPException(status_code=500, detail="OpenAI API key not configured")
-        
+            
         # Initialize session data before starting background task
         if session_id not in active_streams:
             active_streams[session_id] = {
@@ -243,6 +261,17 @@ async def stream_endpoint(session_id: str):
             # Send initial connection event
             yield f"data: {json.dumps({'type': 'connected', 'session_id': session_id})}\n\n"
             logger.info(f"🧵 SSE STREAM STARTED for session {session_id}")
+            
+            # Initialize session data if not exists (silences warnings)
+            if session_id not in active_streams:
+                active_streams[session_id] = {
+                    "message": "",
+                    "status": "waiting",
+                    "text": "",
+                    "audio_queue": [],
+                    "conversation_history": []
+                }
+                logger.info(f"🧵 Initialized session data for {session_id}")
             
             # Stream text updates
             last_text = ""
