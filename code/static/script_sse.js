@@ -22,6 +22,7 @@ const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const statusEl = document.getElementById('status');
 const messagesEl = document.getElementById('messages');
+const messagesContainerEl = document.querySelector('.messages-container');  // ← Scrollable container
 const ttsToggle = document.getElementById('ttsToggle');
 const clearBtn = document.getElementById('clearBtn');
 
@@ -90,7 +91,7 @@ function handleSSEMessage(data) {
             // Use marked.parse for AI responses to render Markdown
             const textElement = aiMessageBubble.querySelector('.message-text');
             textElement.innerHTML = marked.parse(aiCurrentText);
-            messagesEl.scrollTop = messagesEl.scrollHeight;
+            messagesContainerEl.scrollTop = messagesContainerEl.scrollHeight;
             
             if (CONFIG.ENABLE_CONSOLE_LOGS) {
                 console.log(`🧵 AI text updated: "${data.content}"`);
@@ -126,7 +127,7 @@ function updateBubble(text) {
         messageBubble.innerHTML = text + '<span class="processing-indicator"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>';
         
         // Auto-scroll
-        messagesEl.scrollTop = messagesEl.scrollHeight;
+        messagesContainerEl.scrollTop = messagesContainerEl.scrollHeight;
     }
 }
 
@@ -158,7 +159,7 @@ function addMessage(text, sender, isRecording = false) {
     messagesEl.appendChild(messageDiv);
     
     // Auto-scroll
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    messagesContainerEl.scrollTop = messagesContainerEl.scrollHeight;
     
     return contentDiv;
 }
