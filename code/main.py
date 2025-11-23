@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
@@ -27,6 +27,11 @@ app = FastAPI()
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Serve favicon at root
+@app.get("/favicon.ico")
+async def favicon():
+    return FileResponse("static/favicon.ico")
 
 # Enable CORS for frontend
 app.add_middleware(
