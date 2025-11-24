@@ -2,6 +2,7 @@
 
 import openai
 import logging
+import asyncio
 from typing import AsyncGenerator, List, Dict
 from system_prompts import get_system_prompt
 from config import OPENAI_API_KEY, LLM_MODEL, LLM_MAX_TOKENS, LLM_TEMPERATURE, LLM_MAX_HISTORY_MESSAGES
@@ -74,9 +75,46 @@ async def stream_chat_response(message: str, conversation_history: List[Dict[str
                 full_text += content
                 yield content
         
+        ai_summarizer(message, full_text)
         logger.info(f"🤖 Streaming complete: {full_text[:100]}...")
         
     except Exception as e:
         logger.error(f"❌ Streaming completion error: {e}")
         raise
+
+
+async def _ai_summarizer_task(user_message: str, assistant_message: str) -> None:
+    """Background test task for future summarization agent.
+
+    For now, this simply counts from 1 to 5 with a 1-second delay between
+    prints so we can verify that scheduling is non-blocking.
+    """
+    try:
+        logger.info("🧠 ai_summarizer task started")
+        for i in range(1, 6):
+            print(f"ai_summarizer tick {i}/5")
+            await asyncio.sleep(1)
+        logger.info("🧠 ai_summarizer task completed")
+    except Exception as e:
+        logger.error(f"🧠 ai_summarizer task error: {e}")
+
+
+def ai_summarizer(user_message: str, assistant_message: str) -> None:
+    """Schedule a non-blocking background task for future summarization.
+
+    This helper is intended to be called soon after streaming completes.
+    It schedules an async task and returns immediately without waiting
+    for the work to finish.
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        # If we're already in an event loop (FastAPI/uvicorn), schedule task.
+        if loop.is_running():
+            asyncio.create_task(_ai_summarizer_task(user_message, assistant_message))
+        else:
+            # Fallback for direct script usage
+            loop.run_until_complete(_ai_summarizer_task(user_message, assistant_message))
+    except RuntimeError:
+        # No running loop; create one just for this task (debug/testing only)
+        asyncio.run(_ai_summarizer_task(user_message, assistant_message))
 

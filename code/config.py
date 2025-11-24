@@ -9,12 +9,17 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# LLM Settings
+# LLM Settings (primary chat model)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Load from .env file
-LLM_MODEL = "gpt-3.5-turbo"  # OpenAI model to use
+LLM_MODEL = "gpt-3.5-turbo"  # Primary OpenAI chat model
 LLM_MAX_TOKENS = 500  # Maximum tokens in response
 LLM_TEMPERATURE = 0.7  # Creativity level (0.0-1.0)
 LLM_MAX_HISTORY_MESSAGES = 10  # Max non-system messages to keep in history
+
+# Summarizer Settings (can use cheaper / smaller model)
+SUMMARIZER_MODEL = "gpt-3.5-turbo"  # Dedicated model for summaries
+SUMMARIZER_MAX_TOKENS = 256  # Short summaries, cheaper
+SUMMARIZER_TEMPERATURE = 0.3  # More deterministic, concise
 
 # Streaming / SSE Settings
 SSE_POLL_INTERVAL_SECONDS = 0.1  # How often to poll for new SSE data
