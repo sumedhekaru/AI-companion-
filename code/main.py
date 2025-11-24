@@ -21,6 +21,9 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Ensure submodule loggers (like llm.py) also log at INFO level
+logging.getLogger("llm").setLevel(logging.INFO)
+
 app = FastAPI()
 
 # Mount static files

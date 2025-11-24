@@ -3,9 +3,19 @@
 import openai
 import logging
 import asyncio
+import json
 from typing import AsyncGenerator, List, Dict
 from system_prompts import get_system_prompt
-from config import OPENAI_API_KEY, LLM_MODEL, LLM_MAX_TOKENS, LLM_TEMPERATURE, LLM_MAX_HISTORY_MESSAGES
+from config import (
+    OPENAI_API_KEY,
+    LLM_MODEL,
+    LLM_MAX_TOKENS,
+    LLM_TEMPERATURE,
+    LLM_MAX_HISTORY_MESSAGES,
+    SUMMARIZER_MODEL,
+    SUMMARIZER_MAX_TOKENS,
+    SUMMARIZER_TEMPERATURE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,17 +94,77 @@ async def stream_chat_response(message: str, conversation_history: List[Dict[str
 
 
 async def _ai_summarizer_task(user_message: str, assistant_message: str) -> None:
-    """Background test task for future summarization agent.
+    """Background summarization task for future logging/analytics.
 
-    For now, this simply counts from 1 to 5 with a 1-second delay between
-    prints so we can verify that scheduling is non-blocking.
+    Uses a dedicated summarizer model to generate:
+      - user_short: brief summary of the user message
+      - assistant_short: brief summary of the assistant message
+      - turn_summary: 1-2 sentence summary of the overall exchange
+
+    For now, results are only logged; DB integration will be added later.
     """
     try:
         logger.info("🧠 ai_summarizer task started")
-        for i in range(1, 6):
-            print(f"ai_summarizer tick {i}/5")
-            await asyncio.sleep(1)
-        logger.info("🧠 ai_summarizer task completed")
+
+        if not OPENAI_API_KEY:
+            logger.warning("🧠 Summarizer skipped: OPENAI_API_KEY not set")
+            return
+
+        global client
+        if client is None:
+            client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
+        system_prompt = (
+            "You are a summarization helper. Given a user message and an assistant "
+            "message, you must return a compact JSON object with three keys: "
+            "'user_short', 'assistant_short', and 'turn_summary'. "
+            "Each value should be a short, human-readable sentence or two. "
+            "Respond with JSON only, no extra text."
+        )
+
+        user_content = {
+            "user_message": user_message,
+            "assistant_message": assistant_message,
+        }
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    "Summarize the following exchange and return JSON with keys "
+                    "'user_short', 'assistant_short', 'turn_summary'.\n\n" +
+                    json.dumps(user_content, ensure_ascii=False)
+                ),
+            },
+        ]
+
+        loop = asyncio.get_event_loop()
+
+        def _call_summarizer():
+            return client.chat.completions.create(
+                model=SUMMARIZER_MODEL,
+                messages=messages,
+                max_tokens=SUMMARIZER_MAX_TOKENS,
+                temperature=SUMMARIZER_TEMPERATURE,
+            )
+
+        response = await loop.run_in_executor(None, _call_summarizer)
+
+        content = response.choices[0].message.content if response.choices else None
+        if not content:
+            logger.warning("🧠 Summarizer returned empty content")
+            return
+
+        logger.info("🧠 Summarizer raw content: %r", content)
+
+        try:
+            summary_data = json.loads(content)
+        except json.JSONDecodeError:
+            logger.warning("🧠 Summarizer response was not valid JSON: %s", content)
+            return
+
+        logger.info("🧠 Summarizer result: %s", summary_data)
     except Exception as e:
         logger.error(f"🧠 ai_summarizer task error: {e}")
 
