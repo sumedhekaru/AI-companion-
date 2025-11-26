@@ -55,8 +55,14 @@ def build_messages(message: str, conversation_history: List[Dict[str, str]] = No
 
 async def stream_chat_response(message: str, conversation_history: List[Dict[str, str]] = None,
                               model: str = LLM_MODEL, max_tokens: int = LLM_MAX_TOKENS, 
-                              temperature: float = LLM_TEMPERATURE, system_prompt_type: str = "default") -> AsyncGenerator[str, None]:
-    """Stream chat response with memory support - yields chunks for real-time display."""
+                              temperature: float = LLM_TEMPERATURE, system_prompt_type: str = "default",
+                              session_id: str | None = None) -> AsyncGenerator[str, None]:
+    """Stream chat response with memory support - yields chunks for real-time display.
+
+    session_id is an optional identifier passed from the caller (e.g., FastAPI layer)
+    so that downstream logging or persistence can associate events with a session.
+    For now it is only logged.
+    """
     try:
         if not OPENAI_API_KEY:
             raise RuntimeError("OPENAI_API_KEY is not set in config.py / environment")
@@ -65,7 +71,10 @@ async def stream_chat_response(message: str, conversation_history: List[Dict[str
         if client is None:
             client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-        logger.info(f"🤖 Starting streaming response with {len(conversation_history or [])} history messages")
+        logger.info(
+            f"🤖 Starting streaming response with {len(conversation_history or [])} history messages"
+            + (f" | session_id={session_id}" if session_id else "")
+        )
         
         messages = build_messages(message, conversation_history, system_prompt_type)
         
@@ -85,7 +94,7 @@ async def stream_chat_response(message: str, conversation_history: List[Dict[str
                 full_text += content
                 yield content
         
-        ai_summarizer(message, full_text)
+        ai_summarizer(message, full_text, session_id=session_id)
         logger.info(f"🤖 Streaming complete: {full_text[:100]}...")
         
     except Exception as e:
@@ -93,7 +102,7 @@ async def stream_chat_response(message: str, conversation_history: List[Dict[str
         raise
 
 
-async def _ai_summarizer_task(user_message: str, assistant_message: str) -> None:
+async def _ai_summarizer_task(user_message: str, assistant_message: str, session_id: str | None = None) -> None:
     """Background summarization task for future logging/analytics.
 
     Uses a dedicated summarizer model to generate:
@@ -104,7 +113,10 @@ async def _ai_summarizer_task(user_message: str, assistant_message: str) -> None
     For now, results are only logged; DB integration will be added later.
     """
     try:
-        logger.info("🧠 ai_summarizer task started")
+        if session_id:
+            logger.info("🧠 ai_summarizer task started | session_id=%s", session_id)
+        else:
+            logger.info("🧠 ai_summarizer task started")
 
         if not OPENAI_API_KEY:
             logger.warning("🧠 Summarizer skipped: OPENAI_API_KEY not set")
@@ -126,6 +138,8 @@ async def _ai_summarizer_task(user_message: str, assistant_message: str) -> None
             "user_message": user_message,
             "assistant_message": assistant_message,
         }
+        if session_id:
+            user_content["session_id"] = session_id
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -169,7 +183,7 @@ async def _ai_summarizer_task(user_message: str, assistant_message: str) -> None
         logger.error(f"🧠 ai_summarizer task error: {e}")
 
 
-def ai_summarizer(user_message: str, assistant_message: str) -> None:
+def ai_summarizer(user_message: str, assistant_message: str, session_id: str | None = None) -> None:
     """Schedule a non-blocking background task for future summarization.
 
     This helper is intended to be called soon after streaming completes.
@@ -180,11 +194,11 @@ def ai_summarizer(user_message: str, assistant_message: str) -> None:
         loop = asyncio.get_event_loop()
         # If we're already in an event loop (FastAPI/uvicorn), schedule task.
         if loop.is_running():
-            asyncio.create_task(_ai_summarizer_task(user_message, assistant_message))
+            asyncio.create_task(_ai_summarizer_task(user_message, assistant_message, session_id=session_id))
         else:
             # Fallback for direct script usage
-            loop.run_until_complete(_ai_summarizer_task(user_message, assistant_message))
+            loop.run_until_complete(_ai_summarizer_task(user_message, assistant_message, session_id=session_id))
     except RuntimeError:
         # No running loop; create one just for this task (debug/testing only)
-        asyncio.run(_ai_summarizer_task(user_message, assistant_message))
+        asyncio.run(_ai_summarizer_task(user_message, assistant_message, session_id=session_id))
 

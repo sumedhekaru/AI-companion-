@@ -163,7 +163,8 @@ async def stream_llm_response(session_id: str, message: str):
         # Get conversation history from session
         conversation_history = active_streams[session_id]["conversation_history"]
         
-        async for content in stream_chat_response(message, conversation_history):
+        # Pass session_id through to the LLM layer for logging/DB usage
+        async for content in stream_chat_response(message, conversation_history, session_id=session_id):
             accumulated_text += content
             sentence_buffer += content
             
