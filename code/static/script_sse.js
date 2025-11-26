@@ -59,8 +59,12 @@ function startSSEStream(sessionId) {
     };
     
     eventSource.onerror = (error) => {
-        console.error('🧵 SSE error:', error);
-        updateStatus('Stream Error');
+        // Browsers can fire onerror for transient network issues or normal reconnects.
+        // To avoid confusing the user, just log the error here and leave the UI state
+        // unchanged. If the stream actually fails, other parts of the app (or lack of
+        // events) will make it obvious.
+        console.error('🧵 SSE error (non-fatal, logged only):', error);
+        // Intentionally not calling updateStatus('Stream Error') here.
     };
 }
 
