@@ -20,3 +20,6 @@ numpy
 pydantic
 
 # transformers is required by Coqui XTTS, using default bundled version
+
+# database
+SQLAlchemy
